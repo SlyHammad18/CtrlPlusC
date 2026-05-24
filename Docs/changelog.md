@@ -701,3 +701,36 @@
 - Green dot when recording, pulsing red dot when paused
 - Clicking stop/resume is instant (no debounce needed)
 - Paused state is in-memory only (not persisted across restarts)
+
+---
+
+## [Unplanned] — Wayland Toggle via Unix Socket IPC — 2026-05-24
+
+### ✅ What Changed
+- **Updated `src-tauri/src/main.rs`** — added CLI arg parsing: `ctrl-c toggle` connects to Unix socket and signals the running instance to toggle window visibility
+- **Updated `src-tauri/src/lib.rs`**:
+  - Added `APP_HANDLE` global `OnceLock<AppHandle>` for cross-thread access to the Tauri app handle
+  - Added `get_socket_path()` — Linux-only, uses `$XDG_RUNTIME_DIR/ctrl-c/ctrl-c.sock` with fallback to `~/.cache/ctrl-c/ctrl-c.sock`
+  - Added `send_toggle()` — connects to the socket, writes "toggle" message, exits cleanly
+  - Added `start_socket_listener()` — background thread accepting Unix socket connections, toggles main window on "toggle" message
+  - `run()` now calls `start_socket_listener()` before Tauri builder starts
+  - Setup closure stores `AppHandle` in `APP_HANDLE`
+  - Updated Wayland log message to show the actual binary path
+- **Fixed `src-tauri/src/autostart.rs`** — added `#[cfg(target_os = "windows")]` guard on `get_app_name()` to silence dead_code warning on Linux
+
+### ✅ Tests
+- All 23 Rust tests pass (1 Wayland env test is expected-fail on Wayland)
+- Toggle IPC verified manually: app starts, `ctrl-c toggle` returns exit 0, app processes toggle
+
+### ⏭️ What Was Not Changed
+- No changes to Windows/X11 hotkey behavior
+- No frontend changes needed (toggle is OS-level)
+- No new crate dependencies added
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Socket path uses `XDG_RUNTIME_DIR` (typically `/run/user/<uid>/`) for standard compliance, falls back to `~/.cache/`
+- Stale socket file is removed on listener startup
+- The DE keybind should run `/path/to/ctrl-c toggle` (the app prints the exact path at startup)

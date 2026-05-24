@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+
+#[cfg(target_os = "windows")]
 fn get_app_name() -> &'static str {
     "Ctrl+C"
 }

@@ -11,9 +11,85 @@ use database::{Database, Entry};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+#[cfg(target_os = "linux")]
+fn get_socket_path() -> PathBuf {
+    let base = dirs::runtime_dir()
+        .unwrap_or_else(|| dirs::cache_dir().unwrap_or_else(|| PathBuf::from("/tmp")));
+    let dir = base.join("ctrl-c");
+    let _ = fs::create_dir_all(&dir);
+    dir.join("ctrl-c.sock")
+}
+
+pub fn send_toggle() {
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        let path = get_socket_path();
+        if let Ok(stream) = std::os::unix::net::UnixStream::connect(&path) {
+            let _ = (&stream).write_all(b"toggle");
+        } else {
+            eprintln!("Ctrl+C is not running");
+            std::process::exit(1);
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        eprintln!("Toggle is only supported on Linux");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn start_socket_listener() {
+    use std::io::Read;
+    use std::os::unix::net::UnixListener;
+
+    std::thread::spawn(move || {
+        let path = get_socket_path();
+        // Remove stale socket file
+        let _ = fs::remove_file(&path);
+        let listener = match UnixListener::bind(&path) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("Ctrl+C: Failed to bind socket: {}", e);
+                return;
+            }
+        };
+
+        for stream in listener.incoming() {
+            match stream {
+                Ok(mut s) => {
+                    let mut buf = [0u8; 64];
+                    if s.read(&mut buf).is_ok() {
+                        let msg = String::from_utf8_lossy(&buf[..]);
+                        if msg.starts_with("toggle") {
+                            if let Some(handle) = APP_HANDLE.get() {
+                                if let Some(window) = handle.get_webview_window("main") {
+                                    if window.is_visible().unwrap_or(false) {
+                                        let _ = window.hide();
+                                    } else {
+                                        let _ = window.show();
+                                        let _ = window.set_focus();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Ctrl+C: Socket accept error: {}", e);
+                    break;
+                }
+            }
+        }
+    });
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PrivateModeStatus {
@@ -313,6 +389,9 @@ pub fn run() {
 
     let config = Mutex::new(loaded_config);
 
+    #[cfg(target_os = "linux")]
+    start_socket_listener();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
@@ -335,6 +414,7 @@ pub fn run() {
         .manage(config)
         .manage(monitor)
         .setup(|app| {
+            let _ = APP_HANDLE.set(app.handle().clone());
             use tauri::menu::{MenuBuilder, MenuItemBuilder};
             use tauri::tray::TrayIconBuilder;
 
@@ -418,8 +498,9 @@ pub fn run() {
             if hotkey::is_wayland() {
                 eprintln!(
                     "Ctrl+C: Wayland detected. Global shortcuts require xdg-desktop-portal \
-                     or manual DE keybind configuration. Set a custom keybind in your \
-                     desktop environment to run 'ctrl-c toggle' or similar."
+                     or manual DE keybind configuration. To use a custom keybind, set your \
+                     DE shortcut to run '{} toggle'.",
+                    std::env::current_exe().unwrap_or_default().display()
                 );
             } else {
                 match hotkey::parse_hotkey(&hotkey_str) {
