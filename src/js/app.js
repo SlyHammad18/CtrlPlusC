@@ -261,7 +261,5 @@
     }
   }, 500);
 
-  setInterval(() => {
-    loadEntries(window.search.getQuery(), window.search.getFilter());
-  }, 5000);
+
 })();

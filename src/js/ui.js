@@ -159,7 +159,64 @@ window.ui = (() => {
     const card = createCard(entry, window.search.getQuery());
     card.classList.remove('entering');
     card.classList.add('entering');
-    cardList.insertBefore(card, cardList.firstChild);
+
+    const d = new Date(entry.timestamp.replace(' ', 'T') + 'Z');
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const lastWeekStart = new Date(weekStart);
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+
+    let targetLabel = 'Today';
+    if (d >= todayStart) targetLabel = 'Today';
+    else if (d >= yesterdayStart) targetLabel = 'Yesterday';
+    else if (d >= weekStart) targetLabel = 'This Week';
+    else if (d >= lastWeekStart) targetLabel = 'Last Week';
+    else targetLabel = 'Older';
+
+    const order = ['Pinned', 'Today', 'Yesterday', 'This Week', 'Last Week', 'Older'];
+    const dividers = cardList.querySelectorAll('.group-divider');
+    let inserted = false;
+
+    for (const div of dividers) {
+      const span = div.querySelector('.group-label');
+      if (span && span.textContent === targetLabel) {
+        cardList.insertBefore(card, div.nextSibling);
+        inserted = true;
+        break;
+      }
+    }
+
+    if (!inserted) {
+      let refNode = null;
+      for (const div of dividers) {
+        const span = div.querySelector('.group-label');
+        if (span) {
+          const targetIdx = order.indexOf(targetLabel);
+          const thisIdx = order.indexOf(span.textContent);
+          if (thisIdx > targetIdx) {
+            refNode = div;
+            break;
+          }
+        }
+      }
+      const newDivider = document.createElement('div');
+      newDivider.className = 'group-divider';
+      const newLabel = document.createElement('span');
+      newLabel.className = 'group-label';
+      newLabel.textContent = targetLabel;
+      newDivider.appendChild(newLabel);
+      if (refNode) {
+        cardList.insertBefore(newDivider, refNode);
+        cardList.insertBefore(card, refNode);
+      } else {
+        cardList.appendChild(newDivider);
+        cardList.appendChild(card);
+      }
+    }
 
     requestAnimationFrame(() => {
       card.classList.remove('entering');
