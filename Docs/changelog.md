@@ -130,3 +130,41 @@
 - Config fields use `#[serde(default)]` so partial configs gracefully fill in defaults
 - Default config is auto-created on first run if the file doesn't exist
 - Path uses `dirs::config_dir()` which maps to XDG on Linux and AppData/Roaming on Windows
+
+---
+
+## [Task 4] — Clipboard Monitor — 2026-05-24
+
+### ✅ What Changed
+- Created `src-tauri/src/clipboard.rs` — background clipboard polling thread:
+  - `ClipboardMonitor` struct with `private_mode: Arc<AtomicBool>` flag
+  - `start_monitoring()` function polls `arboard::Clipboard` at configurable interval
+  - Duplicate detection: compares with last captured content before saving
+  - Calls `db.add_entry()` to persist new entries
+  - Emits Tauri event `clipboard-changed` to frontend with the new entry
+  - Respects private mode flag (pauses monitoring when locked, resets last_content)
+  - Auto-retries clipboard initialization if it fails initially
+- Updated `src-tauri/src/lib.rs`:
+  - Refactored Database management to `Arc<Database>` for sharing between commands + clipboard thread
+  - Updated all command signatures: `State<'_, Database>` → `State<'_, Arc<Database>>`
+  - Added `use tauri::Manager` for AppHandle state access in setup
+  - Added `ClipboardMonitor` to managed Tauri state
+  - Added `set_private_mode` Tauri command to toggle clipboard monitoring
+  - Poll interval reads from config behavior section via `setup` hook
+
+### ✅ Tests
+- All 13 existing tests pass (9 database + 4 config) — no test regressions
+- Clipboard module has no standalone tests (requires system clipboard access)
+
+### ⏭️ What Was Not Changed
+- No frontend changes yet (frontend listens for `clipboard-changed` event in Task 6)
+- No config, private_mode, hotkey, or autostart modules modified
+
+### ❌ Errors Faced
+- Missing `use tauri::Manager` import — AppHandle needs `Manager` trait in scope for `.state()` method
+- Lifetime issue accessing Config state inside setup closure — resolved by binding MutexGuard to explicit local variable in inner block
+
+### 📝 Notes
+- Clipboard monitor runs in a detached `std::thread::spawn` — not Tokio, since it's a simple sleep-poll loop
+- `arboard::Clipboard` is not thread-safe, so it's created inside the thread and never shared
+- Private mode flag is `Arc<AtomicBool>` so the Tauri command and monitor thread can share it atomically
