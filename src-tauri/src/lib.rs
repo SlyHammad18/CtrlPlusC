@@ -193,6 +193,19 @@ fn copy_and_paste(text: String, monitor: State<'_, ClipboardMonitor>, window: ta
 }
 
 #[tauri::command]
+fn register_hotkey(
+    app_handle: tauri::AppHandle,
+    hotkey_str: String,
+) -> Result<(), String> {
+    if hotkey::is_wayland() {
+        return Err("Global shortcuts not supported on Wayland via this method".to_string());
+    }
+    let shortcut = hotkey::parse_hotkey(&hotkey_str)?;
+    app_handle.global_shortcut().register(shortcut).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn copy_to_clipboard(text: String, monitor: State<'_, ClipboardMonitor>) -> Result<(), String> {
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     clip.set_text(&text).map_err(|e| e.to_string())?;
@@ -409,6 +422,7 @@ pub fn run() {
             copy_and_paste,
             copy_to_clipboard,
             check_clipboard,
+            register_hotkey,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

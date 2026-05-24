@@ -167,7 +167,7 @@
 
   document.getElementById('btn-settings')?.addEventListener('click', async () => {
     const cfg = await window.api.getConfig();
-    document.getElementById('setting-hotkey').textContent = cfg.hotkey?.toggle_window || 'Ctrl+Shift+V';
+    document.getElementById('setting-hotkey').textContent = cfg.hotkey?.toggle_window || 'Alt+V';
 
     try {
       const enabled = await window.api.isAutostartEnabled();
@@ -181,7 +181,71 @@
     window.ui.showSettings();
   });
 
+  let listeningHotkey = false;
+  const hotkeyEl = document.getElementById('setting-hotkey');
+  let hotkeyHandler = null;
+
+  hotkeyEl?.addEventListener('click', function () {
+    if (listeningHotkey) return;
+    listeningHotkey = true;
+    this.classList.add('listening');
+    this.textContent = 'Press keys...';
+
+    hotkeyHandler = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const parts = [];
+      if (e.ctrlKey) parts.push('Ctrl');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+      if (e.metaKey) parts.push('Super');
+
+      const key = e.key;
+      if (['Control', 'Alt', 'Shift', 'Meta'].includes(key)) return;
+
+      const keyMap = {
+        'ArrowUp': 'ArrowUp', 'ArrowDown': 'ArrowDown', 'ArrowLeft': 'ArrowLeft', 'ArrowRight': 'ArrowRight',
+        ' ': 'Space', 'Escape': 'Escape', 'Enter': 'Enter', 'Tab': 'Tab', 'Delete': 'Delete', 'Backspace': 'Backspace',
+        'Insert': 'Insert', 'Home': 'Home', 'End': 'End', 'PageUp': 'PageUp', 'PageDown': 'PageDown',
+      };
+      const mapped = keyMap[key] || (key.length === 1 ? key.toUpperCase() : null);
+      if (!mapped) return;
+
+      parts.push(mapped);
+      const hotkeyStr = parts.join('+');
+
+      document.removeEventListener('keydown', hotkeyHandler);
+      listeningHotkey = false;
+      hotkeyEl.classList.remove('listening');
+
+      try {
+        const cfg = await window.api.getConfig();
+        cfg.hotkey = cfg.hotkey || { toggle_window: 'Alt+V' };
+        cfg.hotkey.toggle_window = hotkeyStr;
+        await window.api.saveConfig(cfg);
+        await window.api.registerHotkey(hotkeyStr);
+        hotkeyEl.textContent = hotkeyStr;
+        window.ui.showToast(`Hotkey set to ${hotkeyStr}`);
+      } catch (err) {
+        hotkeyEl.textContent = 'Error';
+        setTimeout(async () => {
+          const cfg2 = await window.api.getConfig();
+          hotkeyEl.textContent = cfg2.hotkey?.toggle_window || 'Alt+V';
+        }, 1500);
+        window.ui.showToast('Failed to register hotkey');
+        console.error('Hotkey change failed:', err);
+      }
+    };
+
+    document.addEventListener('keydown', hotkeyHandler);
+  });
+
   document.getElementById('btn-settings-close')?.addEventListener('click', () => {
+    if (listeningHotkey) {
+      listeningHotkey = false;
+      document.getElementById('setting-hotkey').classList.remove('listening');
+    }
     window.ui.hideSettings();
   });
 

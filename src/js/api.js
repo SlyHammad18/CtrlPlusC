@@ -67,5 +67,8 @@ window.api = (() => {
 
     isAutostartEnabled: () =>
       invoke('is_autostart_enabled'),
+
+    registerHotkey: (hotkeyStr) =>
+      invoke('register_hotkey', { hotkeyStr }),
   };
 })();

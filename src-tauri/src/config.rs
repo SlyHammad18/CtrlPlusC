@@ -128,7 +128,7 @@ impl Default for HotkeyConfig {
     }
 }
 
-fn default_toggle_window() -> String { "Ctrl+Shift+V".to_string() }
+fn default_toggle_window() -> String { "Alt+V".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -219,7 +219,7 @@ mod tests {
         assert_eq!(config.theme.bg_primary, "#0F172A");
         assert_eq!(config.window.width, 420);
         assert_eq!(config.behavior.max_entries, 100);
-        assert_eq!(config.hotkey.toggle_window, "Ctrl+Shift+V");
+        assert_eq!(config.hotkey.toggle_window, "Alt+V");
         assert!(!config.autostart);
         assert!(config.private_mode_password_hash.is_empty());
     }

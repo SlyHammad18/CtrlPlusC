@@ -95,6 +95,21 @@
   flex-shrink: 0;
 }
 
+.settings-hotkey {
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.settings-hotkey:hover {
+  border-color: var(--accent);
+}
+
+.settings-hotkey.listening {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.15);
+  animation: pulse 1s ease infinite;
+}
+
 .settings-action-btn {
   padding: 6px 14px;
   border: 1px solid var(--border);

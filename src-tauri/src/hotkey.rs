@@ -108,6 +108,12 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_alt_v() {
+        let shortcut = parse_hotkey("Alt+V").unwrap();
+        let _ = shortcut;
+    }
+
+    #[test]
     fn test_parse_alt_f4() {
         let shortcut = parse_hotkey("Alt+F4").unwrap();
         let _ = shortcut;
