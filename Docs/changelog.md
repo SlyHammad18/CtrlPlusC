@@ -335,3 +335,28 @@
 - Windows clipboard API (`OpenClipboard`/`GetClipboardData`) requires the calling thread to have a Windows message queue. Creating `arboard::Clipboard` inside a `thread::spawn` creates a hidden HWND but the thread's sleep-loop never pumps messages, so clipboard reads fail silently.
 - The fix decouples clipboard access from the polling thread: `check_clipboard` runs as a Tauri command on the main event-loop thread which has a proper message pump.
 - Future optimization: cache the `arboard::Clipboard` instance in Tauri managed state instead of creating a new one per poll (but `Clipboard` is not `Send`, so it can't be shared across threads easily).
+
+---
+
+## [Task 7] — Search & Date Filter — 2026-05-24
+
+### ✅ What Changed
+- Modified `src/js/ui.js` — `renderCards()` now shows contextual empty state:
+  - Active search query → "No results for '[query]'" with search icon
+  - Active date filter (non-"All") → "No entries for this period" with calendar icon
+  - No query/filter → default "No clipboard entries yet" (includes Refresh button)
+  - Refresh button re-bound after innerHTML replacement (DOM listeners lost on innerHTML set)
+
+### ✅ Tests
+- All 13 Rust tests pass (unchanged)
+
+### ⏭️ What Was Not Changed
+- No backend Rust changes
+- No HTML/CSS changes
+- search.js, api.js, app.js unchanged (search/filter/highlight were already wired in Task 5)
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Most of Task 7 was already implemented in Tasks 2 and 5 (search debounce, backend wiring, highlighting, date filter tabs, combined queries). The only missing piece was the contextual "no results" state.
