@@ -59,3 +59,38 @@
 - App launches successfully with `npm run tauri dev`
 - Verify command: `npm run tauri dev` (not `cargo tauri dev`)
 - Build takes ~5 min on first run due to full dependency compilation
+
+---
+
+## [Task 2] — Database Layer — 2026-05-24
+
+### ✅ What Changed
+- Created `src-tauri/src/database.rs` — full database module:
+  - `Database` struct wrapping `Mutex<Connection>` for thread-safe SQLite access
+  - Schema auto-migration on init (entries table + indexes for timestamp, pinned)
+  - CRUD: `add_entry()`, `get_entries()`, `delete_entry()`, `toggle_pin()`
+  - FIFO cleanup: deletes oldest unpinned entries when count exceeds 100
+  - Search: case-insensitive substring match via `LIKE`
+  - Date filter: today, yesterday, 7 days, 30 days filters via SQLite datetime
+  - Preview generation (first 100 chars + "..." if longer)
+  - Duplicate detection (skips if content matches most recent entry)
+- Updated `src-tauri/src/lib.rs`:
+  - `mod database` declaration
+  - 4 Tauri commands: `add_entry`, `get_entries`, `delete_entry`, `toggle_pin`
+  - Database init at startup using `dirs::data_dir()` path (~/.local/share/ctrl-c/history.db)
+  - Creates data directory automatically
+
+### ✅ Tests
+- 9 unit tests all pass: add/get, duplicate detection, delete, toggle_pin, FIFO cleanup (2), FIFO keeps pinned, search, date_filter_today, preview_truncation
+
+### ⏭️ What Was Not Changed
+- No config.rs, clipboard.rs, hotkey.rs, or other modules yet
+- Frontend unchanged
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- `new_in_memory()` is `#[cfg(test)]` — only compiled in test builds
+- Search uses `LIKE '%query%'` (case-insensitive for ASCII by default in SQLite; for Unicode use `LIKE` is case-insensitive only for ASCII, but this suffices MVP)
+- Date filters are string-based match on SQLite filter names
