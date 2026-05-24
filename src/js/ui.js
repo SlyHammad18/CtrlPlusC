@@ -87,6 +87,7 @@ window.ui = (() => {
 
   function renderCards(entries, query) {
     cardList.innerHTML = '';
+    cardList.appendChild(emptyState);
 
     if (!entries || entries.length === 0) {
       emptyState.style.display = 'flex';
@@ -238,7 +239,7 @@ window.ui = (() => {
     card.classList.add('removing');
     setTimeout(() => {
       card.remove();
-      if (cardList.children.length === 0) {
+      if (cardList.children.length <= 1) {
         emptyState.style.display = 'flex';
       }
     }, 250);
@@ -326,6 +327,7 @@ window.ui = (() => {
     const el = document.getElementById('empty-state');
     if (!el) return;
     el.style.display = 'flex';
+    if (!el.parentNode) cardList.appendChild(el);
     el.innerHTML = `
       <p class="empty-text" style="color:var(--danger)">${message}</p>
       <button id="btn-retry" class="filter-btn" style="margin-top:8px">Retry</button>

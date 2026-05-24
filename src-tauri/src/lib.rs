@@ -125,8 +125,19 @@ fn delete_entry(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn clear_all(state: State<'_, Arc<Database>>) -> Result<(), String> {
-    state.clear_all()
+fn clear_all(state: State<'_, Arc<Database>>, monitor: State<'_, ClipboardMonitor>) -> Result<(), String> {
+    state.clear_all()?;
+    // Sync last_content to current clipboard so the next poll doesn't re-add it
+    if let Ok(mut clip) = arboard::Clipboard::new() {
+        if let Ok(t) = clip.get_text() {
+            if !t.trim().is_empty() {
+                if let Ok(mut last) = monitor.last_content.lock() {
+                    *last = Some(t);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]

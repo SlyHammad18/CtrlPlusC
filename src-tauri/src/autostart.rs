@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 #[cfg(target_os = "windows")]
 fn get_app_name() -> &'static str {
     "Ctrl+C"
@@ -72,7 +70,7 @@ pub fn is_autostart_enabled() -> Result<bool, String> {
 #[cfg(target_os = "linux")]
 fn autostart_desktop_path() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let mut path = PathBuf::from(home);
+    let mut path = std::path::PathBuf::from(home);
     path.push(".config");
     path.push("autostart");
     path.push("ctrl-c.desktop");
