@@ -52,16 +52,16 @@ impl Default for ThemeConfig {
     }
 }
 
-fn default_bg_primary() -> String { "#0F172A".to_string() }
-fn default_bg_secondary() -> String { "#1E293B".to_string() }
-fn default_bg_card() -> String { "#334155".to_string() }
-fn default_text_primary() -> String { "#F8FAFC".to_string() }
-fn default_text_secondary() -> String { "#94A3B8".to_string() }
-fn default_accent() -> String { "#3B82F6".to_string() }
-fn default_accent_hover() -> String { "#2563EB".to_string() }
-fn default_danger() -> String { "#EF4444".to_string() }
-fn default_success() -> String { "#22C55E".to_string() }
-fn default_border() -> String { "#475569".to_string() }
+fn default_bg_primary() -> String { "#080611".to_string() }
+fn default_bg_secondary() -> String { "#1A0F2E".to_string() }
+fn default_bg_card() -> String { "#261A3C".to_string() }
+fn default_text_primary() -> String { "#EDE9FE".to_string() }
+fn default_text_secondary() -> String { "#9D8BB5".to_string() }
+fn default_accent() -> String { "#7C3AED".to_string() }
+fn default_accent_hover() -> String { "#6D28D9".to_string() }
+fn default_danger() -> String { "#F87171".to_string() }
+fn default_success() -> String { "#34D399".to_string() }
+fn default_border() -> String { "#332653".to_string() }
 fn default_border_radius() -> String { "12px".to_string() }
 fn default_font_family() -> String { "Inter, system-ui, sans-serif".to_string() }
 fn default_font_size() -> String { "14px".to_string() }
@@ -216,7 +216,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.theme.bg_primary, "#0F172A");
+        assert_eq!(config.theme.bg_primary, "#080611");
         assert_eq!(config.window.width, 420);
         assert_eq!(config.behavior.max_entries, 100);
         assert_eq!(config.hotkey.toggle_window, "Alt+V");
@@ -251,7 +251,7 @@ mod tests {
         "##;
         let config: Config = toml::from_str(partial).unwrap();
         assert_eq!(config.theme.bg_primary, "#FF0000");
-        assert_eq!(config.theme.bg_secondary, "#1E293B");
+        assert_eq!(config.theme.bg_secondary, "#1A0F2E");
         assert_eq!(config.window.width, 420);
     }
 }

@@ -114,10 +114,10 @@
           <div class="settings-section">
             <div class="settings-row">
               <div class="settings-label">
-                <span class="settings-label-text">Reset theme</span>
-                <span class="settings-label-desc">Restore default dark theme colors</span>
+                <span class="settings-label-text">Theme</span>
+                <span class="settings-label-desc">Customize colors</span>
               </div>
-              <button id="btn-settings-theme-reset" class="settings-action-btn">Reset</button>
+              <button id="btn-settings-theme" class="settings-action-btn">Customize</button>
             </div>
           </div>
 
@@ -127,6 +127,23 @@
               <span class="settings-label-desc">Cross-platform clipboard manager</span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="theme-overlay" class="theme-overlay">
+      <div class="theme-panel">
+        <div class="theme-header">
+          <h2 class="theme-title">Theme Colors</h2>
+          <button id="btn-theme-close" class="icon-btn" title="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="theme-presets" id="theme-presets"></div>
+        <div class="theme-body" id="theme-editor-body"></div>
+        <div class="theme-footer">
+          <button id="btn-theme-reset" class="settings-action-btn">Reset Defaults</button>
+          <button id="btn-theme-save" class="settings-action-btn theme-save-btn">Save</button>
         </div>
       </div>
     </div>

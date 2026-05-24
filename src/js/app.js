@@ -279,12 +279,192 @@
     window.ui.showPasswordSetup();
   });
 
-  document.getElementById('btn-settings-theme-reset')?.addEventListener('click', async () => {
+  const themeFields = [
+    { key: 'bg_primary', label: 'Background' },
+    { key: 'bg_secondary', label: 'Surface' },
+    { key: 'bg_card', label: 'Card' },
+    { key: 'text_primary', label: 'Text' },
+    { key: 'text_secondary', label: 'Text Dim' },
+    { key: 'accent', label: 'Accent' },
+    { key: 'accent_hover', label: 'Accent Hover' },
+    { key: 'danger', label: 'Danger' },
+    { key: 'success', label: 'Success' },
+    { key: 'border', label: 'Border' },
+  ];
+
+  const presets = [
+    {
+      name: 'Void Purple',
+      theme: {
+        bg_primary: '#080611', bg_secondary: '#1A0F2E', bg_card: '#261A3C',
+        text_primary: '#EDE9FE', text_secondary: '#9D8BB5',
+        accent: '#7C3AED', accent_hover: '#6D28D9',
+        danger: '#F87171', success: '#34D399', border: '#332653',
+      },
+    },
+    {
+      name: 'Synthwave',
+      theme: {
+        bg_primary: '#0F0817', bg_secondary: '#1E0E30', bg_card: '#2A153C',
+        text_primary: '#FFD6EE', text_secondary: '#A87F9E',
+        accent: '#FF2D9B', accent_hover: '#E01A7F',
+        danger: '#FF6B6B', success: '#3DFFC0', border: '#40204D',
+      },
+    },
+    {
+      name: 'Midnight Ocean',
+      theme: {
+        bg_primary: '#030B14', bg_secondary: '#0A1A2E', bg_card: '#0F2640',
+        text_primary: '#E0F7FF', text_secondary: '#6A9FBA',
+        accent: '#00D4FF', accent_hover: '#00B3D9',
+        danger: '#FF5555', success: '#00E5A0', border: '#1A3A55',
+      },
+    },
+    {
+      name: 'Cyberpunk Terminal',
+      theme: {
+        bg_primary: '#0A0A0A', bg_secondary: '#141414', bg_card: '#1E1E1E',
+        text_primary: '#00FF41', text_secondary: '#707070',
+        accent: '#39FF14', accent_hover: '#2ECC10',
+        danger: '#FF3333', success: '#00FF41', border: '#2A2A2A',
+      },
+    },
+    {
+      name: 'Arctic Frost',
+      theme: {
+        bg_primary: '#EEF2F6', bg_secondary: '#FFFFFF', bg_card: '#E2EAF2',
+        text_primary: '#1A2E3D', text_secondary: '#6A8FA8',
+        accent: '#0077CC', accent_hover: '#005FA3',
+        danger: '#E53E3E', success: '#2E7D32', border: '#C8D8E4',
+      },
+    },
+    {
+      name: 'Obsidian',
+      theme: {
+        bg_primary: '#0A0A0A', bg_secondary: '#141414', bg_card: '#1A1A1A',
+        text_primary: '#E0E0E0', text_secondary: '#666666',
+        accent: '#888888', accent_hover: '#777777',
+        danger: '#E05555', success: '#4CAF70', border: '#2A2A2A',
+      },
+    },
+  ];
+
+  function applyThemeToEditor(theme) {
+    themeFields.forEach((field) => {
+      const val = theme[field.key];
+      if (!val) return;
+      document.documentElement.style.setProperty(`--${field.key.replace(/_/g, '-')}`, val);
+      const picker = document.getElementById(`theme-${field.key}`);
+      if (picker) picker.value = val;
+      const hex = picker?.nextElementSibling;
+      if (hex) hex.value = val;
+    });
+  }
+
+  function buildThemeEditor(cfg) {
+    const presetsEl = document.getElementById('theme-presets');
+    presetsEl.innerHTML = '';
+    const root = document.documentElement;
+    presets.forEach((p) => {
+      const btn = document.createElement('button');
+      btn.className = 'theme-preset-btn';
+      btn.textContent = p.name;
+      const match = Object.entries(p.theme).every(([k, v]) => {
+        const cssVal = root.style.getPropertyValue(`--${k.replace(/_/g, '-')}`).trim();
+        return cssVal && cssVal.toLowerCase() === v.toLowerCase();
+      });
+      if (match) btn.classList.add('active');
+      btn.addEventListener('click', () => {
+        presetsEl.querySelectorAll('.theme-preset-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyThemeToEditor(p.theme);
+      });
+      presetsEl.appendChild(btn);
+    });
+
+    const body = document.getElementById('theme-editor-body');
+    body.innerHTML = '';
+    themeFields.forEach((field) => {
+      const row = document.createElement('div');
+      row.className = 'theme-field';
+
+      const label = document.createElement('label');
+      label.textContent = field.label;
+      label.htmlFor = `theme-${field.key}`;
+
+      const picker = document.createElement('input');
+      picker.type = 'color';
+      picker.id = `theme-${field.key}`;
+      picker.value = cfg.theme[field.key] || '';
+
+      const hex = document.createElement('input');
+      hex.type = 'text';
+      hex.className = 'theme-hex';
+      hex.value = picker.value;
+
+      function clearPresetHighlight() {
+        document.querySelectorAll('.theme-preset-btn').forEach((b) => b.classList.remove('active'));
+      }
+
+      picker.addEventListener('input', () => {
+        clearPresetHighlight();
+        hex.value = picker.value;
+        document.documentElement.style.setProperty(`--${field.key.replace(/_/g, '-')}`, picker.value);
+      });
+
+      hex.addEventListener('input', () => {
+        if (/^#[0-9a-fA-F]{6}$/.test(hex.value)) {
+          clearPresetHighlight();
+          picker.value = hex.value;
+          document.documentElement.style.setProperty(`--${field.key.replace(/_/g, '-')}`, hex.value);
+        }
+      });
+
+      row.appendChild(label);
+      row.appendChild(picker);
+      row.appendChild(hex);
+      body.appendChild(row);
+    });
+  }
+
+  document.getElementById('btn-settings-theme')?.addEventListener('click', async () => {
+    const cfg = await window.api.getConfig();
+    buildThemeEditor(cfg);
+    document.getElementById('theme-overlay').classList.add('visible');
+  });
+
+  document.getElementById('btn-theme-close')?.addEventListener('click', () => {
+    document.getElementById('theme-overlay').classList.remove('visible');
+    window.theme.load();
+  });
+
+  document.getElementById('theme-overlay')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('theme-overlay')) {
+      document.getElementById('theme-overlay').classList.remove('visible');
+      window.theme.load();
+    }
+  });
+
+  document.getElementById('btn-theme-save')?.addEventListener('click', async () => {
     try {
       const cfg = await window.api.getConfig();
-      cfg.theme = {};
+      themeFields.forEach((field) => {
+        const el = document.getElementById(`theme-${field.key}`);
+        if (el) cfg.theme[field.key] = el.value;
+      });
       await window.api.saveConfig(cfg);
-      await window.theme.load();
+      document.getElementById('theme-overlay').classList.remove('visible');
+      window.ui.showToast('Theme saved');
+    } catch (err) {
+      window.ui.showToast('Failed to save theme');
+      console.error('Theme save failed:', err);
+    }
+  });
+
+  document.getElementById('btn-theme-reset')?.addEventListener('click', async () => {
+    try {
+      const voidPurple = presets[0].theme;
+      applyThemeToEditor(voidPurple);
       window.ui.showToast('Theme reset to defaults');
     } catch (err) {
       console.error('Theme reset failed:', err);
