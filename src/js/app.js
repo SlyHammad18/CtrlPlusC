@@ -107,7 +107,80 @@
     }
   });
 
+  async function handleLockAction() {
+    try {
+      const status = await window.api.getPrivateModeStatus();
+      if (!status.has_password) {
+        window.ui.showPasswordSetup();
+      } else {
+        await window.api.lockPrivateMode();
+        window.ui.showLockScreen();
+      }
+    } catch (err) {
+      console.error('Lock failed:', err);
+    }
+  }
+
+  async function handleUnlockOrSetPassword() {
+    const input = document.getElementById('lock-input');
+    const password = input ? input.value.trim() : '';
+    if (!password) return;
+
+    const title = document.getElementById('lock-title');
+    if (title && title.textContent === 'Set Password') {
+      try {
+        await window.api.setPrivateModePassword(password);
+        window.ui.showLockScreen();
+        window.ui.showToast('Password set');
+      } catch (err) {
+        window.ui.setLockError(err?.message || 'Failed to set password');
+        window.ui.lockShake();
+      }
+    } else {
+      try {
+        const ok = await window.api.unlockPrivateMode(password);
+        if (ok) {
+          window.ui.hideLockScreen();
+          await loadEntries('', 'all');
+        } else {
+          window.ui.setLockError('Wrong password');
+          window.ui.lockShake();
+          if (input) input.value = '';
+        }
+      } catch (err) {
+        window.ui.setLockError(err?.message || 'Unlock failed');
+        window.ui.lockShake();
+      }
+    }
+  }
+
+  document.getElementById('btn-lock')?.addEventListener('click', handleLockAction);
+
+  document.getElementById('lock-btn')?.addEventListener('click', handleUnlockOrSetPassword);
+
+  document.getElementById('lock-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleUnlockOrSetPassword();
+    }
+  });
+
   await loadEntries('', 'all');
+
+  if (window.__TAURI__?.event?.listen) {
+    window.__TAURI__.event.listen('private-mode-locked', () => {
+      window.ui.showLockScreen();
+    });
+  }
+
+  try {
+    const status = await window.api.getPrivateModeStatus();
+    if (status.locked) {
+      window.ui.showLockScreen();
+    }
+  } catch (err) {
+    console.error('Failed to check lock status:', err);
+  }
 
   setInterval(async () => {
     try {

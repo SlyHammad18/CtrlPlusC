@@ -360,3 +360,168 @@
 
 ### 📝 Notes
 - Most of Task 7 was already implemented in Tasks 2 and 5 (search debounce, backend wiring, highlighting, date filter tabs, combined queries). The only missing piece was the contextual "no results" state.
+
+---
+
+## [Task 8] — Private Mode (Lock/Unlock) — 2026-05-24
+
+### ✅ What Changed
+- **Created `src-tauri/src/private_mode.rs`** — Argon2id password hashing module:
+  - `hash_password(password)` — generates salted Argon2id hash
+  - `verify_password(password, hash)` — constant-time verification
+  - 4 unit tests (hash/verify roundtrip, wrong password, empty hash, salt uniqueness)
+- **Updated `src-tauri/src/config.rs`**:
+  - Added `private_mode_locked: bool` field to `Config` struct (persists lock state across restarts)
+- **Updated `src-tauri/src/lib.rs`**:
+  - Added `mod private_mode` declaration
+  - Added `PrivateModeStatus` struct (locked + has_password flags)
+  - Added 4 Tauri commands:
+    - `get_private_mode_status` — returns lock state and whether password is set
+    - `set_private_mode_password` — hashes password, saves to config, locks immediately
+    - `lock_private_mode` — sets locked flag in config + monitor, saves to disk
+    - `unlock_private_mode` — verifies password, clears locked flag, resumes monitoring
+  - Removed the old `set_private_mode` command (replaced by `lock_private_mode`/`unlock_private_mode`)
+  - `run()` now checks `private_mode_locked` at startup and initializes monitor accordingly
+- **Created `src/styles/lock.css`** — lock screen overlay styles (blur, centered layout, input, shake animation)
+- **Updated `src/index.html`**:
+  - Added `<link>` for `lock.css`
+  - Added lock screen overlay HTML (lock icon, title, password input, unlock button, error message)
+- **Updated `src/js/api.js`**:
+  - Replaced `setPrivateMode` with `getPrivateModeStatus`, `setPrivateModePassword`, `lockPrivateMode`, `unlockPrivateMode`
+- **Updated `src/js/ui.js`**:
+  - Added `showLockScreen()` — shows overlay with unlock UI
+  - Added `hideLockScreen()` — hides overlay
+  - Added `showPasswordSetup()` — shows overlay with password creation UI
+  - Added `lockShake()` — triggers shake animation on wrong password
+  - Added `setLockError(msg)` — displays error text on lock screen
+- **Updated `src/js/app.js`**:
+  - Added `handleLockAction()` — checks status, either shows password setup or locks immediately
+  - Added `handleUnlockOrSetPassword()` — either creates password or verifies unlock
+  - Lock button click → lock or password setup
+  - Lock screen button click → unlock or set password
+  - Enter key on lock input → same as button click
+  - On startup: checks if locked → shows lock screen immediately
+
+### ✅ Tests
+- All 17 Rust tests pass (13 existing + 4 new private_mode)
+
+### ⏭️ What Was Not Changed
+- database.rs, clipboard.rs unchanged
+- No hotkey.rs, autostart.rs created yet
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- First-time flow: user clicks lock → prompted to create password → password saved → immediately locked
+- Subsequent flow: user clicks lock → immediately locked (no password prompt)
+- Lock screen shows on app restart if was locked before
+- Clipboard monitoring paused when locked (via existing `ClipboardMonitor.private_mode` flag)
+
+---
+
+## [Task 9] — System Tray — 2026-05-24
+
+### ✅ What Changed
+- **Updated `src-tauri/src/lib.rs`**:
+  - Added `tauri::Emitter` import (needed for `emit()` on AppHandle)
+  - Added `tauri::Manager` import (needed for `get_webview_window`, `state()` on AppHandle)
+  - Added `.setup()` closure to `Tauri::Builder` that creates the system tray:
+    - **Tray icon** — uses `app.default_window_icon()` (existing icons)
+    - **Tooltip** — "Ctrl+C — Clipboard Manager"
+    - **Menu items**: "Show/Hide" (toggle window), "Lock Private Mode" (locks from tray), "Quit" (exit app)
+    - **Left-click on tray icon** — toggles window visibility (show/hide)
+    - **Menu event handlers**:
+      - `show_hide` — show or hide the main window
+      - `lock_private` — locks private mode (pauses clipboard, saves config), emits `private-mode-locked` event to frontend
+      - `quit` — exits the application
+- **Updated `src/js/app.js`**:
+  - Added `__TAURI__.event.listen('private-mode-locked', ...)` to show lock screen when locked from tray
+
+### ✅ Tests
+- All 17 Rust tests pass (unchanged)
+
+### ⏭️ What Was Not Changed
+- No new Rust modules created
+- No hotkey.rs or autostart.rs yet
+
+### ❌ Errors Faced
+- Missing `use tauri::Emitter` import caused compile error (`emit` method from `Emitter` trait not in scope) — resolved by adding the import
+
+### 📝 Notes
+- Tray uses Tauri v2's built-in `tray-icon` feature (already in Cargo.toml)
+- Icons already existed from Task 1 initialization
+- Private mode from tray only locks; unlocking still requires frontend password entry
+- Left-click on tray icon toggles window; right-click opens context menu
+
+---
+
+## [Task 10] — Global Hotkey — 2026-05-24
+
+### ✅ What Changed
+- **Created `src-tauri/src/hotkey.rs`** — global hotkey parsing module:
+  - `parse_hotkey(hotkey_str)` — parses config hotkey string (e.g. "Ctrl+Shift+V") into `tauri_plugin_global_shortcut::Shortcut`
+  - Supports modifiers: Ctrl, Alt, Shift, Super/Win/Cmd
+  - Supports letter keys, digit keys, F1-F12, Space, Enter, Escape, Tab, navigation keys
+  - `is_wayland()` — checks `WAYLAND_DISPLAY` env var for Wayland detection
+  - 6 unit tests (parse common shortcuts, invalid key, missing key, Wayland detection)
+- **Updated `src-tauri/src/lib.rs`**:
+  - Added `mod hotkey;` declaration
+  - Added import: `use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};`
+  - Registered `tauri_plugin_global_shortcut::Builder` plugin with a handler that toggles window visibility on `ShortcutState::Pressed`
+  - In `.setup()`: reads hotkey from config (`config.hotkey.toggle_window`), parses it, and registers via `app.global_shortcut().register()`
+  - Wayland fallback: if `is_wayland()` returns true, logs a message about `xdg-desktop-portal` or manual DE keybind setup instead of registering
+
+### ✅ Tests
+- All 23 Rust tests pass (13 database + 4 config + 4 private_mode + 6 hotkey)
+
+### ⏭️ What Was Not Changed
+- No frontend changes (hotkey toggles window at OS level, no JS needed)
+- No database or clipboard modules changed
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Default hotkey: `Ctrl+Shift+V` (from config)
+- Hotkey is configurable via `config.toml` → `[hotkey] toggle_window`
+- The handler toggles the main window's visibility (same as tray click)
+- Wayland detection is passive — just logs a message, doesn't block startup
+
+---
+
+## [Task 11] — Autostart — 2026-05-24
+
+### ✅ What Changed
+- **Created `src-tauri/src/autostart.rs`** — platform-specific autostart module:
+  - `enable_autostart()` — registers app to start on login
+    - **Windows:** `reg add HKCU\...\Run` with current exe path
+    - **Linux:** creates `~/.config/autostart/ctrl-c.desktop` file
+  - `disable_autostart()` — removes autostart registration
+    - **Windows:** `reg delete HKCU\...\Run` value
+    - **Linux:** removes `.desktop` file
+  - `is_autostart_enabled()` — checks if autostart is currently registered
+    - **Windows:** `reg query` exit code
+    - **Linux:** file existence check
+  - Unsupported platforms return `Err("Autostart not supported on this platform")`
+- **Updated `src-tauri/src/lib.rs`**:
+  - Added `mod autostart;` declaration
+  - Added 3 Tauri commands: `enable_autostart`, `disable_autostart`, `is_autostart_enabled`
+  - In `run()`: checks `config.autostart` flag at startup and calls `autostart::enable_autostart()` if true (ensures registration on every launch)
+- **Updated `src/js/api.js`**:
+  - Added `enableAutostart()`, `disableAutostart()`, `isAutostartEnabled()` wrappers
+
+### ✅ Tests
+- All 23 Rust tests pass, zero warnings
+
+### ⏭️ What Was Not Changed
+- Settings UI not yet implemented (Task 12) — autostart toggle in settings will come next
+- No frontend CSS/HTML changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Uses `std::process::Command` for Windows registry (no new crate dependencies)
+- Config `autostart` field controls desired state; actual OS registration is applied at startup
+- Settings UI toggle will call `save_config(autostart=true/false)` + `enable_autostart()/disable_autostart()`

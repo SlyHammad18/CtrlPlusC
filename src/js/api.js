@@ -38,13 +38,31 @@ window.api = (() => {
     saveConfig: (config) =>
       invoke('save_config', { config }),
 
-    setPrivateMode: (locked) =>
-      invoke('set_private_mode', { locked }),
+    getPrivateModeStatus: () =>
+      invoke('get_private_mode_status'),
+
+    setPrivateModePassword: (password) =>
+      invoke('set_private_mode_password', { password }),
+
+    lockPrivateMode: () =>
+      invoke('lock_private_mode'),
+
+    unlockPrivateMode: (password) =>
+      invoke('unlock_private_mode', { password }),
 
     copyToClipboard: (text) =>
       invoke('copy_to_clipboard', { text }),
 
     checkClipboard: () =>
       invoke('check_clipboard'),
+
+    enableAutostart: () =>
+      invoke('enable_autostart'),
+
+    disableAutostart: () =>
+      invoke('disable_autostart'),
+
+    isAutostartEnabled: () =>
+      invoke('is_autostart_enabled'),
   };
 })();

@@ -252,5 +252,58 @@ window.ui = (() => {
     loadEntriesRef = fn;
   }
 
-  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showError, setLoadEntries };
+  function showLockScreen() {
+    const overlay = document.getElementById('lock-overlay');
+    if (!overlay) return;
+    overlay.classList.add('visible');
+    const input = document.getElementById('lock-input');
+    const error = document.getElementById('lock-error');
+    const title = document.getElementById('lock-title');
+    const subtitle = document.getElementById('lock-subtitle');
+    const btn = document.getElementById('lock-btn');
+    if (input) { input.value = ''; input.classList.remove('shake'); }
+    if (error) error.textContent = '';
+    if (title) title.textContent = 'Locked';
+    if (subtitle) subtitle.textContent = 'Enter your password to unlock';
+    if (btn) btn.textContent = 'Unlock';
+    if (input) setTimeout(() => input.focus(), 100);
+  }
+
+  function hideLockScreen() {
+    const overlay = document.getElementById('lock-overlay');
+    if (overlay) overlay.classList.remove('visible');
+  }
+
+  function showPasswordSetup() {
+    const overlay = document.getElementById('lock-overlay');
+    if (!overlay) return;
+    overlay.classList.add('visible');
+    const input = document.getElementById('lock-input');
+    const error = document.getElementById('lock-error');
+    const title = document.getElementById('lock-title');
+    const subtitle = document.getElementById('lock-subtitle');
+    const btn = document.getElementById('lock-btn');
+    if (input) { input.value = ''; input.classList.remove('shake'); input.type = 'password'; }
+    if (error) error.textContent = '';
+    if (title) title.textContent = 'Set Password';
+    if (subtitle) subtitle.textContent = 'Create a password to lock your clipboard';
+    if (btn) btn.textContent = 'Set Password';
+    if (input) setTimeout(() => input.focus(), 100);
+  }
+
+  function lockShake() {
+    const input = document.getElementById('lock-input');
+    if (input) {
+      input.classList.remove('shake');
+      void input.offsetWidth;
+      input.classList.add('shake');
+    }
+  }
+
+  function setLockError(msg) {
+    const error = document.getElementById('lock-error');
+    if (error) error.textContent = msg;
+  }
+
+  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError };
 })();

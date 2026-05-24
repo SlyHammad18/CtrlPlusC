@@ -144,6 +144,8 @@ pub struct Config {
     pub autostart: bool,
     #[serde(default)]
     pub private_mode_password_hash: String,
+    #[serde(default)]
+    pub private_mode_locked: bool,
 }
 
 impl Default for Config {
@@ -155,6 +157,7 @@ impl Default for Config {
             hotkey: HotkeyConfig::default(),
             autostart: default_autostart(),
             private_mode_password_hash: String::new(),
+            private_mode_locked: false,
         }
     }
 }

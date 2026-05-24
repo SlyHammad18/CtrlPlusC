@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="styles/main.css" />
   <link rel="stylesheet" href="styles/cards.css" />
   <link rel="stylesheet" href="styles/animations.css" />
+  <link rel="stylesheet" href="styles/lock.css" />
 </head>
 <body>
   <div id="app" class="app">
@@ -63,6 +64,18 @@
         </svg>
       </button>
     </footer>
+
+    <div id="lock-overlay" class="lock-overlay">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lock-icon">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      <p class="lock-title" id="lock-title">Locked</p>
+      <p class="lock-subtitle" id="lock-subtitle">Enter your password to unlock</p>
+      <input type="password" id="lock-input" class="lock-input" placeholder="Password" autocomplete="off" />
+      <button id="lock-btn" class="lock-btn">Unlock</button>
+      <p id="lock-error" class="lock-error"></p>
+    </div>
   </div>
 
   <script type="module" src="js/theme.js"></script>
