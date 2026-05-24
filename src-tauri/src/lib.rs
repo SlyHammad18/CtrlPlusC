@@ -179,13 +179,15 @@ fn simulate_paste() {
 fn simulate_paste() {}
 
 #[tauri::command]
-fn copy_and_paste(text: String, monitor: State<'_, ClipboardMonitor>) -> Result<(), String> {
+fn copy_and_paste(text: String, monitor: State<'_, ClipboardMonitor>, window: tauri::Window) -> Result<(), String> {
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     clip.set_text(&text).map_err(|e| e.to_string())?;
     drop(clip);
     if let Ok(mut last) = monitor.last_app_copy.lock() {
         *last = Some(text.clone());
     }
+    let _ = window.hide();
+    std::thread::sleep(std::time::Duration::from_millis(50));
     simulate_paste();
     Ok(())
 }
@@ -384,6 +386,11 @@ pub fn run() {
             }
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(false) = event {
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             add_entry,
