@@ -525,3 +525,46 @@
 - Uses `std::process::Command` for Windows registry (no new crate dependencies)
 - Config `autostart` field controls desired state; actual OS registration is applied at startup
 - Settings UI toggle will call `save_config(autostart=true/false)` + `enable_autostart()/disable_autostart()`
+
+---
+
+## [Task 12] — Settings Panel — 2026-05-24
+
+### ✅ What Changed
+- **Created `src/styles/settings.css`** — settings modal styles:
+  - Overlay with centered panel, header with close button
+  - Rows with label/description + control (toggle, value badge, action button)
+  - Custom toggle switch (accent-colored slider with circle knob)
+  - About section at the bottom
+- **Updated `src/index.html`**:
+  - Added `<link>` for `settings.css`
+  - Added settings modal overlay with:
+    - **Autostart toggle** — toggle switch for start-on-login
+    - **Global hotkey** — read-only display of current hotkey binding
+    - **Private mode** — "Set Password" / "Change Password" button
+    - **Reset theme** — button to restore default colors
+    - **About section** — app name and version
+- **Updated `src/js/ui.js`**:
+  - Added `showSettings()` — shows settings modal overlay
+  - Added `hideSettings()` — hides settings modal overlay
+- **Updated `src/js/app.js`**:
+  - Settings button click → loads current config, autostart status, private mode status → populates UI → shows modal
+  - Autostart toggle `change` → calls `enableAutostart()`/`disableAutostart()` + saves to config
+  - "Set Password" / "Change Password" → hides settings, opens password setup flow
+  - "Reset theme" → clears theme config to defaults, reloads theme, shows toast
+  - Close button and backdrop click → hides settings modal
+
+### ✅ Tests
+- All 23 Rust tests pass (unchanged)
+
+### ⏭️ What Was Not Changed
+- No backend Rust changes
+- No database/clipboard/hotkey/autostart module changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Theme reset works by saving an empty theme object (`{}`) — `serde(default)` fills in defaults on next load
+- Password setup redirects to the existing lock screen flow (reuses `showPasswordSetup`)
+- Autostart toggle calls both OS registration + config save

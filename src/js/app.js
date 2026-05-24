@@ -165,6 +165,68 @@
     }
   });
 
+  document.getElementById('btn-settings')?.addEventListener('click', async () => {
+    const cfg = await window.api.getConfig();
+    document.getElementById('setting-hotkey').textContent = cfg.hotkey?.toggle_window || 'Ctrl+Shift+V';
+
+    try {
+      const enabled = await window.api.isAutostartEnabled();
+      document.getElementById('setting-autostart').checked = enabled;
+    } catch (_) { /* best effort */ }
+
+    const status = await window.api.getPrivateModeStatus();
+    const pwBtn = document.getElementById('btn-settings-password');
+    pwBtn.textContent = status.has_password ? 'Change Password' : 'Set Password';
+
+    window.ui.showSettings();
+  });
+
+  document.getElementById('btn-settings-close')?.addEventListener('click', () => {
+    window.ui.hideSettings();
+  });
+
+  document.getElementById('settings-overlay')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('settings-overlay')) {
+      window.ui.hideSettings();
+    }
+  });
+
+  document.getElementById('setting-autostart')?.addEventListener('change', async (e) => {
+    const enabled = e.target.checked;
+    try {
+      if (enabled) {
+        await window.api.enableAutostart();
+      } else {
+        await window.api.disableAutostart();
+      }
+      const cfg = await window.api.getConfig();
+      cfg.autostart = enabled;
+      await window.api.saveConfig(cfg);
+      window.ui.showToast(enabled ? 'Autostart enabled' : 'Autostart disabled');
+    } catch (err) {
+      e.target.checked = !enabled;
+      window.ui.showToast('Failed to update autostart');
+      console.error('Autostart toggle failed:', err);
+    }
+  });
+
+  document.getElementById('btn-settings-password')?.addEventListener('click', () => {
+    window.ui.hideSettings();
+    window.ui.showPasswordSetup();
+  });
+
+  document.getElementById('btn-settings-theme-reset')?.addEventListener('click', async () => {
+    try {
+      const cfg = await window.api.getConfig();
+      cfg.theme = {};
+      await window.api.saveConfig(cfg);
+      await window.theme.load();
+      window.ui.showToast('Theme reset to defaults');
+    } catch (err) {
+      console.error('Theme reset failed:', err);
+    }
+  });
+
   await loadEntries('', 'all');
 
   if (window.__TAURI__?.event?.listen) {

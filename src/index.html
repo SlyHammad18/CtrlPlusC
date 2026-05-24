@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="styles/cards.css" />
   <link rel="stylesheet" href="styles/animations.css" />
   <link rel="stylesheet" href="styles/lock.css" />
+  <link rel="stylesheet" href="styles/settings.css" />
 </head>
 <body>
   <div id="app" class="app">
@@ -75,6 +76,69 @@
       <input type="password" id="lock-input" class="lock-input" placeholder="Password" autocomplete="off" />
       <button id="lock-btn" class="lock-btn">Unlock</button>
       <p id="lock-error" class="lock-error"></p>
+    </div>
+
+    <div id="settings-overlay" class="settings-overlay">
+      <div class="settings-panel">
+        <div class="settings-header">
+          <h2 class="settings-title">Settings</h2>
+          <button id="btn-settings-close" class="icon-btn" title="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div class="settings-body">
+          <div class="settings-section">
+            <div class="settings-row">
+              <div class="settings-label">
+                <span class="settings-label-text">Start on login</span>
+                <span class="settings-label-desc">Automatically launch Ctrl+C when you sign in</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="setting-autostart" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-row">
+              <div class="settings-label">
+                <span class="settings-label-text">Global hotkey</span>
+                <span class="settings-label-desc">Toggle window visibility</span>
+              </div>
+              <span id="setting-hotkey" class="settings-value">Ctrl+Shift+V</span>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-row">
+              <div class="settings-label">
+                <span class="settings-label-text">Private mode</span>
+                <span class="settings-label-desc">Password-protect your clipboard</span>
+              </div>
+              <button id="btn-settings-password" class="settings-action-btn">Set Password</button>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-row">
+              <div class="settings-label">
+                <span class="settings-label-text">Reset theme</span>
+                <span class="settings-label-desc">Restore default dark theme colors</span>
+              </div>
+              <button id="btn-settings-theme-reset" class="settings-action-btn">Reset</button>
+            </div>
+          </div>
+
+          <div class="settings-section about-section">
+            <div class="settings-about">
+              <span class="settings-label-text">Ctrl+C v0.1.0</span>
+              <span class="settings-label-desc">Cross-platform clipboard manager</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

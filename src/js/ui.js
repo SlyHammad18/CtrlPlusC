@@ -305,5 +305,15 @@ window.ui = (() => {
     if (error) error.textContent = msg;
   }
 
-  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError };
+  function showSettings() {
+    const overlay = document.getElementById('settings-overlay');
+    if (overlay) overlay.classList.add('visible');
+  }
+
+  function hideSettings() {
+    const overlay = document.getElementById('settings-overlay');
+    if (overlay) overlay.classList.remove('visible');
+  }
+
+  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings };
 })();
