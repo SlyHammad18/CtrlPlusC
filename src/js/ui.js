@@ -2,6 +2,23 @@ window.ui = (() => {
   const cardList = document.getElementById('card-list');
   const emptyState = document.getElementById('empty-state');
 
+  function getGroupLabel(date) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const lastWeekStart = new Date(weekStart);
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+
+    if (date >= today) return 'Today';
+    if (date >= yesterday) return 'Yesterday';
+    if (date >= weekStart) return 'This Week';
+    if (date >= lastWeekStart) return 'Last Week';
+    return 'Older';
+  }
+
   function formatTimestamp(ts) {
     const date = new Date(ts.replace(' ', 'T') + 'Z');
     const now = new Date();
@@ -74,8 +91,6 @@ window.ui = (() => {
     if (!entries || entries.length === 0) {
       emptyState.style.display = 'flex';
       const hasQuery = query && query.length > 0;
-      const filter = window.search.getFilter();
-      const hasFilter = filter !== 'all';
       if (hasQuery) {
         emptyState.innerHTML = `
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
@@ -83,14 +98,6 @@ window.ui = (() => {
           </svg>
           <p class="empty-text">No results for "${query}"</p>
           <p class="empty-hint">Try a different search term</p>
-        `;
-      } else if (hasFilter) {
-        emptyState.innerHTML = `
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-          </svg>
-          <p class="empty-text">No entries for this period</p>
-          <p class="empty-hint">Try a different date filter</p>
         `;
       } else {
         emptyState.innerHTML = `
@@ -109,9 +116,37 @@ window.ui = (() => {
 
     emptyState.style.display = 'none';
 
+    const pinned = entries.filter(e => e.is_pinned);
+    const unpinned = entries.filter(e => !e.is_pinned);
+
+    const groups = [];
+    if (pinned.length) groups.push({ label: 'Pinned', items: pinned });
+
+    const grouped = {};
+    unpinned.forEach(entry => {
+      const date = new Date(entry.timestamp.replace(' ', 'T') + 'Z');
+      const label = getGroupLabel(date);
+      if (!grouped[label]) grouped[label] = [];
+      grouped[label].push(entry);
+    });
+
+    const groupOrder = ['Today', 'Yesterday', 'This Week', 'Last Week', 'Older'];
+    groupOrder.forEach(label => {
+      if (grouped[label]?.length) groups.push({ label, items: grouped[label] });
+    });
+
     const fragment = document.createDocumentFragment();
-    entries.forEach((entry) => {
-      fragment.appendChild(createCard(entry, query));
+    groups.forEach((group) => {
+      const divider = document.createElement('div');
+      divider.className = 'group-divider';
+      const label = document.createElement('span');
+      label.className = 'group-label';
+      label.textContent = group.label;
+      divider.appendChild(label);
+      fragment.appendChild(divider);
+      group.items.forEach((entry) => {
+        fragment.appendChild(createCard(entry, query));
+      });
     });
     cardList.appendChild(fragment);
   }
