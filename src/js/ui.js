@@ -93,23 +93,31 @@ window.ui = (() => {
       const hasQuery = query && query.length > 0;
       if (hasQuery) {
         emptyState.innerHTML = `
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
+          <div class="empty-art">
+            <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon-svg">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </div>
           <p class="empty-text">No results for "${query}"</p>
           <p class="empty-hint">Try a different search term</p>
         `;
       } else {
         emptyState.innerHTML = `
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
-          </svg>
-          <p class="empty-text">No clipboard entries yet</p>
-          <p class="empty-hint">Copy something to get started</p>
-          <button id="btn-refresh" class="filter-btn" style="margin-top:10px">Refresh</button>
+          <div class="empty-art">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon-svg">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+              <line x1="12" y1="11" x2="12" y2="17"/>
+              <polyline points="9 14 12 11 15 14"/>
+            </svg>
+          </div>
+          <p class="empty-text">No clipboard history</p>
+          <p class="empty-hint">Select some text and copy it —<br/>it will appear here</p>
+          <div class="empty-shortcut">
+            <span class="shortcut-key">${window.api.getHotkeyDisplay ? 'Alt+V' : 'Alt+V'}</span>
+            <span class="shortcut-label">to toggle window</span>
+          </div>
         `;
-        document.getElementById('btn-refresh')?.addEventListener('click', () => loadEntriesRef(''));
       }
       return;
     }
@@ -325,14 +333,7 @@ window.ui = (() => {
     const retry = document.getElementById('btn-retry');
     if (retry) {
       retry.addEventListener('click', () => {
-        el.innerHTML = `
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
-          </svg>
-          <p class="empty-text">No clipboard entries yet</p>
-          <p class="empty-hint">Copy something to get started</p>
-        `;
+        loadEntriesRef('');
         loadEntriesRef('');
       });
     }

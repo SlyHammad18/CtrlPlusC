@@ -29,6 +29,9 @@ window.api = (() => {
     deleteEntry: (id) =>
       invoke('delete_entry', { id }),
 
+    clearAll: () =>
+      invoke('clear_all'),
+
     togglePin: (id) =>
       invoke('toggle_pin', { id }),
 
@@ -70,5 +73,8 @@ window.api = (() => {
 
     registerHotkey: (hotkeyStr) =>
       invoke('register_hotkey', { hotkeyStr }),
+
+    setMonitoring: (active) =>
+      invoke('set_monitoring', { active }),
   };
 })();

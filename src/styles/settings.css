@@ -19,7 +19,7 @@
 .settings-panel {
   width: 320px;
   max-height: 80vh;
-  background: var(--bg-secondary);
+  background: var(--bg-modal);
   border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -209,7 +209,7 @@
 
 .theme-panel {
   width: 320px;
-  background: var(--bg-secondary);
+  background: var(--bg-modal);
   border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);

@@ -639,3 +639,65 @@
 ### 📝 Notes
 - Transparent window works via `transparent: true` in window config (no extra feature needed in Tauri v2)
 - Removing `border-radius` ensures the app background fills the entire window edge-to-edge
+
+---
+
+## [Unplanned] — Theme Overhaul — 2026-05-24
+
+### ✅ What Changed
+- **Updated all 6 theme presets in `src/js/app.js`** — new color values for Void Purple, Synthwave, Midnight Ocean, Cyberpunk Terminal, Arctic Frost, Obsidian with darker/saturated backgrounds, improved contrast ratios, and 3 new fields per preset
+- **Added 3 new CSS variables**: `--bg-modal`, `--border-card`, `--accent-subtle`
+- **Updated `src/styles/main.css`**: new `:root` defaults, search input uses `--bg-card` + focus state border uses `--accent-subtle`
+- **Updated `src/styles/cards.css`**: cards use `--border-card` (visible subtle border instead of transparent), hover uses `--accent-subtle`, search highlight uses `--accent-subtle`, confirm dialog uses `--bg-modal`
+- **Updated `src/styles/settings.css`**: settings panel + theme panel use `--bg-modal` for overlay panels
+- **Updated `src/styles/lock.css`**: lock overlay uses `--bg-modal`
+- **Updated `src/js/theme.js`**: applies `--bg-modal`, `--border-card`, `--accent-subtle` from theme config
+- **Updated `src-tauri/src/config.rs`**: added `bg_modal`, `border_card`, `accent_subtle` fields to `ThemeConfig` struct + serde defaults + Default impl + test assertions; updated Void Purple defaults with new values
+- **Updated `src/js/app.js`**: `themeFields` now includes `bg_modal`, `accent_subtle`, `border_card` in the editor
+
+### ✅ Tests
+- All 24 Rust tests pass (unchanged count, updated assertions)
+
+### ⏭️ What Was Not Changed
+- No database, clipboard, private_mode, hotkey, autostart module changes
+- No new HTML elements
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Void Purple is now `#0A0612` (was `#080611`), with distinct `--bg-modal: #160F28` for overlay panels
+- `--border-card` gives every card a subtle visible border by default (was transparent)
+- `--accent-subtle` used for hover borders, search highlights, and search focus states
+- Arctic Frost retains its light theme identity with appropriate light-mode equivalents of new vars
+
+---
+
+## [Unplanned] — Default Theme Obsidian + Stop Recording Button — 2026-05-24
+
+### ✅ What Changed
+- **Default theme changed to Obsidian** (`src/styles/main.css` `:root`, `src-tauri/src/config.rs` serde defaults, test assertions)
+- **Theme reset button** now resolves to Obsidian by name (`presets.find(p => p.name === 'Obsidian')`)
+- **Added Stop Recording button** in header:
+  - `src-tauri/src/clipboard.rs` — added `paused: Arc<AtomicBool>` to `ClipboardMonitor`
+  - `src-tauri/src/lib.rs` — added `set_monitoring` Tauri command; `check_clipboard` now checks `paused` flag alongside `private_mode`
+  - `src/js/api.js` — added `setMonitoring(active)` wrapper
+  - `src/index.html` — stop/play toggle button with record dot indicator, dual SVG icons
+  - `src/styles/main.css` — `.record-btn`, `.record-dot` styles with pulse animation when paused
+  - `src/js/app.js` — toggle handler calls `setMonitoring`, swaps icons, toggles red dot pulse
+
+### ✅ Tests
+- All 24 Rust tests pass (unchanged)
+
+### ⏭️ What Was Not Changed
+- No database, private_mode, hotkey, autostart changes
+- Existing private mode functionality unaffected
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Stop button is independent from private mode — just pauses clipboard polling, doesn't require password
+- Green dot when recording, pulsing red dot when paused
+- Clicking stop/resume is instant (no debounce needed)
+- Paused state is in-memory only (not persisted across restarts)

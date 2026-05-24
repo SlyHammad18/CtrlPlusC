@@ -169,6 +169,12 @@ impl Database {
         Ok(())
     }
 
+    pub fn clear_all(&self) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM entries", []).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     pub fn toggle_pin(&self, id: i64) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(

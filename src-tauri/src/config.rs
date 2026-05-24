@@ -10,6 +10,8 @@ pub struct ThemeConfig {
     pub bg_secondary: String,
     #[serde(default = "default_bg_card")]
     pub bg_card: String,
+    #[serde(default = "default_bg_modal")]
+    pub bg_modal: String,
     #[serde(default = "default_text_primary")]
     pub text_primary: String,
     #[serde(default = "default_text_secondary")]
@@ -18,12 +20,16 @@ pub struct ThemeConfig {
     pub accent: String,
     #[serde(default = "default_accent_hover")]
     pub accent_hover: String,
+    #[serde(default = "default_accent_subtle")]
+    pub accent_subtle: String,
     #[serde(default = "default_danger")]
     pub danger: String,
     #[serde(default = "default_success")]
     pub success: String,
     #[serde(default = "default_border")]
     pub border: String,
+    #[serde(default = "default_border_card")]
+    pub border_card: String,
     #[serde(default = "default_border_radius")]
     pub border_radius: String,
     #[serde(default = "default_font_family")]
@@ -38,13 +44,16 @@ impl Default for ThemeConfig {
             bg_primary: default_bg_primary(),
             bg_secondary: default_bg_secondary(),
             bg_card: default_bg_card(),
+            bg_modal: default_bg_modal(),
             text_primary: default_text_primary(),
             text_secondary: default_text_secondary(),
             accent: default_accent(),
             accent_hover: default_accent_hover(),
+            accent_subtle: default_accent_subtle(),
             danger: default_danger(),
             success: default_success(),
             border: default_border(),
+            border_card: default_border_card(),
             border_radius: default_border_radius(),
             font_family: default_font_family(),
             font_size: default_font_size(),
@@ -52,16 +61,19 @@ impl Default for ThemeConfig {
     }
 }
 
-fn default_bg_primary() -> String { "#080611".to_string() }
-fn default_bg_secondary() -> String { "#1A0F2E".to_string() }
-fn default_bg_card() -> String { "#261A3C".to_string() }
-fn default_text_primary() -> String { "#EDE9FE".to_string() }
-fn default_text_secondary() -> String { "#9D8BB5".to_string() }
-fn default_accent() -> String { "#7C3AED".to_string() }
-fn default_accent_hover() -> String { "#6D28D9".to_string() }
-fn default_danger() -> String { "#F87171".to_string() }
-fn default_success() -> String { "#34D399".to_string() }
-fn default_border() -> String { "#332653".to_string() }
+fn default_bg_primary() -> String { "#0A0A0A".to_string() }
+fn default_bg_secondary() -> String { "#141414".to_string() }
+fn default_bg_card() -> String { "#1E1E1E".to_string() }
+fn default_bg_modal() -> String { "#181818".to_string() }
+fn default_text_primary() -> String { "#E8E8E8".to_string() }
+fn default_text_secondary() -> String { "#707070".to_string() }
+fn default_accent() -> String { "#AAAAAA".to_string() }
+fn default_accent_hover() -> String { "#CCCCCC".to_string() }
+fn default_accent_subtle() -> String { "#1A1A1A".to_string() }
+fn default_danger() -> String { "#E05555".to_string() }
+fn default_success() -> String { "#55AA77".to_string() }
+fn default_border() -> String { "#242424".to_string() }
+fn default_border_card() -> String { "#2C2C2C".to_string() }
 fn default_border_radius() -> String { "12px".to_string() }
 fn default_font_family() -> String { "Inter, system-ui, sans-serif".to_string() }
 fn default_font_size() -> String { "14px".to_string() }
@@ -216,7 +228,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.theme.bg_primary, "#080611");
+        assert_eq!(config.theme.bg_primary, "#0A0A0A");
         assert_eq!(config.window.width, 420);
         assert_eq!(config.behavior.max_entries, 100);
         assert_eq!(config.hotkey.toggle_window, "Alt+V");
@@ -251,7 +263,7 @@ mod tests {
         "##;
         let config: Config = toml::from_str(partial).unwrap();
         assert_eq!(config.theme.bg_primary, "#FF0000");
-        assert_eq!(config.theme.bg_secondary, "#1A0F2E");
+        assert_eq!(config.theme.bg_secondary, "#141414");
         assert_eq!(config.window.width, 420);
     }
 }

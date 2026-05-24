@@ -49,6 +49,11 @@ fn delete_entry(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> 
 }
 
 #[tauri::command]
+fn clear_all(state: State<'_, Arc<Database>>) -> Result<(), String> {
+    state.clear_all()
+}
+
+#[tauri::command]
 fn toggle_pin(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> {
     state.toggle_pin(id)
 }
@@ -216,11 +221,30 @@ fn copy_to_clipboard(text: String, monitor: State<'_, ClipboardMonitor>) -> Resu
 }
 
 #[tauri::command]
+fn set_monitoring(monitor: State<'_, ClipboardMonitor>, active: bool) -> Result<(), String> {
+    let was_paused = monitor.paused.swap(!active, Ordering::Relaxed);
+    // When resuming, sync last_content to current clipboard so items
+    // copied while paused are not retroactively added
+    if active && was_paused {
+        if let Ok(mut clip) = arboard::Clipboard::new() {
+            if let Ok(t) = clip.get_text() {
+                if !t.trim().is_empty() {
+                    if let Ok(mut last) = monitor.last_content.lock() {
+                        *last = Some(t);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn check_clipboard(
     db: State<'_, Arc<Database>>,
     monitor: State<'_, ClipboardMonitor>,
 ) -> Result<Option<Entry>, String> {
-    if monitor.private_mode.load(Ordering::Relaxed) {
+    if monitor.private_mode.load(Ordering::Relaxed) || monitor.paused.load(Ordering::Relaxed) {
         return Ok(None);
     }
 
@@ -421,6 +445,7 @@ pub fn run() {
             add_entry,
             get_entries,
             delete_entry,
+            clear_all,
             toggle_pin,
             get_config,
             save_config,
@@ -434,6 +459,7 @@ pub fn run() {
             copy_and_paste,
             copy_to_clipboard,
             check_clipboard,
+            set_monitoring,
             register_hotkey,
         ])
         .run(tauri::generate_context!())

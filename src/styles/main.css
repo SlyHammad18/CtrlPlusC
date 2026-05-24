@@ -7,16 +7,19 @@
 }
 
 :root {
-  --bg-primary: #080611;
-  --bg-secondary: #1A0F2E;
-  --bg-card: #261A3C;
-  --text-primary: #EDE9FE;
-  --text-secondary: #9D8BB5;
-  --accent: #7C3AED;
-  --accent-hover: #6D28D9;
-  --danger: #F87171;
-  --success: #34D399;
-  --border: #332653;
+  --bg-primary: #0A0A0A;
+  --bg-secondary: #141414;
+  --bg-card: #1E1E1E;
+  --bg-modal: #181818;
+  --text-primary: #E8E8E8;
+  --text-secondary: #707070;
+  --accent: #AAAAAA;
+  --accent-hover: #CCCCCC;
+  --accent-subtle: #1A1A1A;
+  --danger: #E05555;
+  --success: #55AA77;
+  --border: #242424;
+  --border-card: #2C2C2C;
   --font-family: 'Inter', system-ui, sans-serif;
   --font-size: 14px;
   --header-height: 52px;
@@ -86,6 +89,31 @@ body {
   color: var(--text-primary);
 }
 
+.record-btn {
+  position: relative;
+}
+
+.record-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  transition: background 0.3s ease;
+}
+
+.record-dot.paused {
+  background: var(--danger);
+  animation: pulse-recording 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 .corner-btn-tr {
   top: 0;
   right: 0;
@@ -115,6 +143,24 @@ body {
   flex-shrink: 0;
 }
 
+.footer-btn {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.footer-btn:hover {
+  opacity: 1;
+  color: var(--danger);
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -136,12 +182,16 @@ body {
   padding: 0 12px 0 32px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-secondary);
+  background: var(--bg-card);
   color: var(--text-primary);
   font-family: var(--font-family);
   font-size: 13px;
   outline: none;
   transition: border-color 0.2s ease;
+}
+
+.search-input:focus {
+  border-color: var(--accent-subtle);
 }
 
 .search-input::placeholder {
@@ -263,23 +313,55 @@ body {
   align-items: center;
   justify-content: center;
   height: 100%;
-  gap: 8px;
+  gap: 6px;
   color: var(--text-secondary);
+  padding: 0 32px;
 }
 
-.empty-icon {
-  opacity: 0.4;
-  margin-bottom: 4px;
+.empty-art {
+  margin-bottom: 12px;
+  opacity: 0.3;
+  color: var(--accent);
 }
 
 .empty-text {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
+  color: var(--text-primary);
+  opacity: 0.7;
 }
 
 .empty-hint {
-  font-size: 12px;
-  opacity: 0.7;
+  font-size: 13px;
+  opacity: 0.5;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.empty-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  opacity: 0.4;
+}
+
+.shortcut-key {
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border: 1px solid var(--text-secondary);
+  border-radius: 3px;
+  color: var(--text-secondary);
+}
+
+.shortcut-label {
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 

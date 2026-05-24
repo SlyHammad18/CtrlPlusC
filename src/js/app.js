@@ -154,6 +154,26 @@
     }
   }
 
+  let monitoring = true;
+  const btnStop = document.getElementById('btn-stop');
+  const recordDot = document.getElementById('record-dot');
+  const stopIcon = document.getElementById('stop-icon');
+  const playIcon = document.getElementById('play-icon');
+
+  btnStop?.addEventListener('click', async () => {
+    monitoring = !monitoring;
+    try {
+      await window.api.setMonitoring(monitoring);
+      btnStop.title = monitoring ? 'Stop recording' : 'Start recording';
+      if (recordDot) recordDot.classList.toggle('paused', !monitoring);
+      if (stopIcon) stopIcon.style.display = monitoring ? '' : 'none';
+      if (playIcon) playIcon.style.display = monitoring ? 'none' : '';
+    } catch (err) {
+      monitoring = !monitoring;
+      console.error('Toggle monitoring failed:', err);
+    }
+  });
+
   document.getElementById('btn-lock')?.addEventListener('click', handleLockAction);
 
   document.getElementById('lock-btn')?.addEventListener('click', handleUnlockOrSetPassword);
@@ -283,68 +303,77 @@
     { key: 'bg_primary', label: 'Background' },
     { key: 'bg_secondary', label: 'Surface' },
     { key: 'bg_card', label: 'Card' },
+    { key: 'bg_modal', label: 'Modal' },
     { key: 'text_primary', label: 'Text' },
     { key: 'text_secondary', label: 'Text Dim' },
     { key: 'accent', label: 'Accent' },
     { key: 'accent_hover', label: 'Accent Hover' },
+    { key: 'accent_subtle', label: 'Accent Subtle' },
     { key: 'danger', label: 'Danger' },
     { key: 'success', label: 'Success' },
     { key: 'border', label: 'Border' },
+    { key: 'border_card', label: 'Card Border' },
   ];
 
   const presets = [
     {
       name: 'Void Purple',
       theme: {
-        bg_primary: '#080611', bg_secondary: '#1A0F2E', bg_card: '#261A3C',
-        text_primary: '#EDE9FE', text_secondary: '#9D8BB5',
+        bg_primary: '#0A0612', bg_secondary: '#120D1F', bg_card: '#1C1530',
+        text_primary: '#EDE9FE', text_secondary: '#9B8FC0',
         accent: '#7C3AED', accent_hover: '#6D28D9',
-        danger: '#F87171', success: '#34D399', border: '#332653',
+        danger: '#F87171', success: '#34D399', border: '#2A1F45',
+        bg_modal: '#160F28', border_card: '#2E2250', accent_subtle: '#1E1040',
       },
     },
     {
       name: 'Synthwave',
       theme: {
-        bg_primary: '#0F0817', bg_secondary: '#1E0E30', bg_card: '#2A153C',
-        text_primary: '#FFD6EE', text_secondary: '#A87F9E',
-        accent: '#FF2D9B', accent_hover: '#E01A7F',
-        danger: '#FF6B6B', success: '#3DFFC0', border: '#40204D',
+        bg_primary: '#0F0817', bg_secondary: '#180E26', bg_card: '#221438',
+        text_primary: '#FFD6EE', text_secondary: '#C07FA0',
+        accent: '#FF2D9B', accent_hover: '#E0187F',
+        danger: '#FF6B6B', success: '#3DFFC0', border: '#3A1848',
+        bg_modal: '#1C1130', border_card: '#3D1C50', accent_subtle: '#2A0820',
       },
     },
     {
       name: 'Midnight Ocean',
       theme: {
-        bg_primary: '#030B14', bg_secondary: '#0A1A2E', bg_card: '#0F2640',
-        text_primary: '#E0F7FF', text_secondary: '#6A9FBA',
-        accent: '#00D4FF', accent_hover: '#00B3D9',
-        danger: '#FF5555', success: '#00E5A0', border: '#1A3A55',
+        bg_primary: '#030B14', bg_secondary: '#091828', bg_card: '#102338',
+        text_primary: '#E0F7FF', text_secondary: '#5B9AB8',
+        accent: '#00D4FF', accent_hover: '#00AACF',
+        danger: '#FF5F5F', success: '#00E5A0', border: '#0E2E44',
+        bg_modal: '#0D1E30', border_card: '#133650', accent_subtle: '#002A40',
       },
     },
     {
       name: 'Cyberpunk Terminal',
       theme: {
-        bg_primary: '#0A0A0A', bg_secondary: '#141414', bg_card: '#1E1E1E',
-        text_primary: '#00FF41', text_secondary: '#707070',
+        bg_primary: '#0A0A0A', bg_secondary: '#141414', bg_card: '#1C1C1C',
+        text_primary: '#EAEAEA', text_secondary: '#707070',
         accent: '#39FF14', accent_hover: '#2ECC10',
-        danger: '#FF3333', success: '#00FF41', border: '#2A2A2A',
+        danger: '#FF4444', success: '#39FF14', border: '#252525',
+        bg_modal: '#181818', border_card: '#2E2E2E', accent_subtle: '#0A2200',
       },
     },
     {
       name: 'Arctic Frost',
       theme: {
-        bg_primary: '#EEF2F6', bg_secondary: '#FFFFFF', bg_card: '#E2EAF2',
-        text_primary: '#1A2E3D', text_secondary: '#6A8FA8',
+        bg_primary: '#EEF2F6', bg_secondary: '#FFFFFF', bg_card: '#FFFFFF',
+        text_primary: '#1A2E3D', text_secondary: '#5A7A94',
         accent: '#0077CC', accent_hover: '#005FA3',
-        danger: '#E53E3E', success: '#2E7D32', border: '#C8D8E4',
+        danger: '#D93025', success: '#1A7F4B', border: '#D0DDE8',
+        bg_modal: '#F5F8FB', border_card: '#C8D8E8', accent_subtle: '#E0EFFA',
       },
     },
     {
       name: 'Obsidian',
       theme: {
-        bg_primary: '#0A0A0A', bg_secondary: '#141414', bg_card: '#1A1A1A',
-        text_primary: '#E0E0E0', text_secondary: '#666666',
-        accent: '#888888', accent_hover: '#777777',
-        danger: '#E05555', success: '#4CAF70', border: '#2A2A2A',
+        bg_primary: '#0A0A0A', bg_secondary: '#141414', bg_card: '#1E1E1E',
+        text_primary: '#E8E8E8', text_secondary: '#707070',
+        accent: '#AAAAAA', accent_hover: '#CCCCCC',
+        danger: '#E05555', success: '#55AA77', border: '#242424',
+        bg_modal: '#181818', border_card: '#2C2C2C', accent_subtle: '#1A1A1A',
       },
     },
   ];
@@ -463,8 +492,8 @@
 
   document.getElementById('btn-theme-reset')?.addEventListener('click', async () => {
     try {
-      const voidPurple = presets[0].theme;
-      applyThemeToEditor(voidPurple);
+      const obsidian = presets.find(p => p.name === 'Obsidian').theme;
+      applyThemeToEditor(obsidian);
       window.ui.showToast('Theme reset to defaults');
     } catch (err) {
       console.error('Theme reset failed:', err);
@@ -475,6 +504,19 @@
 
   document.getElementById('btn-close')?.addEventListener('click', () => {
     if (appWindow) appWindow.hide();
+  });
+
+  document.getElementById('btn-clear-all')?.addEventListener('click', async () => {
+    const confirmed = await window.ui.showConfirm('Delete all clipboard history?');
+    if (!confirmed) return;
+    try {
+      await window.api.clearAll();
+      window.ui.renderCards([], '');
+      window.ui.showToast('History cleared');
+    } catch (err) {
+      window.ui.showToast('Failed to clear history');
+      console.error('Clear all failed:', err);
+    }
   });
 
   await loadEntries('', 'all');
