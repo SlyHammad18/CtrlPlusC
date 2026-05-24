@@ -1,0 +1,131 @@
+.clip-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 6px;
+  background: var(--bg-card);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.clip-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-color: var(--border);
+}
+
+.clip-card:active {
+  transform: translateY(0);
+}
+
+.clip-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.clip-card.pinned {
+  border-left: 3px solid var(--accent);
+}
+
+.clip-card.pinned .pin-btn svg {
+  color: var(--accent);
+}
+
+.clip-preview {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.clip-preview .highlight {
+  background: rgba(59, 130, 246, 0.3);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.clip-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.clip-timestamp {
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.clip-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.clip-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.clip-card:hover .clip-action-btn {
+  opacity: 0.7;
+}
+
+.clip-action-btn:hover {
+  opacity: 1 !important;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.clip-action-btn.copy-btn:hover {
+  color: var(--accent);
+}
+
+.clip-action-btn.pin-btn:hover {
+  color: var(--accent);
+}
+
+.clip-action-btn.delete-btn:hover {
+  color: var(--danger);
+}
+
+.clip-action-btn:active {
+  transform: scale(0.9);
+}
+
+.no-results {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.no-results-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.no-results-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}

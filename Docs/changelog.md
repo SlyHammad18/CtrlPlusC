@@ -168,3 +168,74 @@
 - Clipboard monitor runs in a detached `std::thread::spawn` — not Tokio, since it's a simple sleep-poll loop
 - `arboard::Clipboard` is not thread-safe, so it's created inside the thread and never shared
 - Private mode flag is `Arc<AtomicBool>` so the Tauri command and monitor thread can share it atomically
+
+---
+
+## [Task 5] — Frontend: Core UI — 2026-05-24
+
+### ✅ What Changed
+- Updated `src/index.html` — full semantic layout:
+  - Header with search input + action buttons (date filter, private mode lock)
+  - Date filter nav (All, Today, Yesterday, 7 Days, 30 Days)
+  - Main scrollable card list with empty state placeholder
+  - Footer with version info and settings button
+  - Inline SVG icons for all buttons (no external icon deps)
+  - Loads Inter font from Google Fonts CDN + system-ui fallback
+  - Loads CSS files (main, cards, animations) and JS modules (app, api, search, theme, ui)
+- Created `src/styles/main.css` — core styles:
+  - CSS custom properties for all theme values (matching config defaults)
+  - App layout: flex column with fixed header/filter/footer, scrollable card area
+  - Search input with icon via CSS mask
+  - Date filter tabs, icon buttons, empty state, custom scrollbar
+- Created `src/styles/cards.css` — clipboard card styles:
+  - Card with hover lift (translateY -1px), shadow, border highlight
+  - Selected state (via keyboard nav), pinned indicator (accent left border)
+  - Action buttons (copy, pin, delete) fade in on hover
+  - Highlighted search matches in previews
+  - No-results empty state styling
+- Created `src/styles/animations.css` — micro-animations:
+  - `fadeIn`, `slideIn`, `slideOut` for card enter/exit
+  - `shake` for error states, `pulse` for loading
+  - Smooth 200-300ms transitions on all interactive elements
+- Created `src/js/theme.js` — theme loader:
+  - `theme.load()` invokes `get_config` backend command
+  - Applies config theme values as CSS custom properties on `:root`
+- Created `src/js/api.js` — Tauri IPC wrapper:
+  - Wraps all backend commands (`add_entry`, `get_entries`, `delete_entry`, `toggle_pin`, `get_config`, `save_config`, `set_private_mode`)
+  - Uses `window.__TAURI__.core.invoke` (withGlobalTauri)
+- Created `src/js/search.js` — search & filter logic:
+  - Debounced input (300ms), date filter tab selection
+  - Text highlighting helper for search results
+- Created `src/js/ui.js` — DOM manipulation:
+  - `renderCards()` — batch render entry list
+  - `prependCard()` — animate new entry insertion
+  - `removeCard()` — slide-out + delete
+  - `updatePinState()` — toggle pinned class
+  - `formatTimestamp()` — relative time display
+- Created `src/js/app.js` — main app logic:
+  - Initializes theme, loads entries on startup
+  - Wires search/filter callbacks to backend
+  - Click handlers: card body (copy), copy/pin/delete buttons
+  - Keyboard navigation: ArrowUp/Down, Enter (copy), Delete (remove)
+  - Listens for `clipboard-changed` event via `window.__TAURI__.event.listen`
+- Updated `src-tauri/tauri.conf.json`:
+  - Added `"withGlobalTauri": true` for `window.__TAURI__` access in webview
+- Updated `src-tauri/capabilities/default.json`:
+  - Already had necessary event permissions (unchanged)
+
+### ✅ Tests
+- All 13 Rust tests pass (unchanged)
+- Frontend loads without errors in Tauri webview (verified via `npm run tauri dev`)
+
+### ⏭️ What Was Not Changed
+- No backend Rust modules modified (only tauri.conf.json)
+- Lock screen CSS/JS (Task 8) not yet implemented — lock icon is placeholder-only
+
+### ❌ Errors Faced
+- `withGlobalTauri` placed inside `security` block was invalid — Tauri v2 schema rejected it
+- Removed to top-level `app` key — build succeeded
+
+### 📝 Notes
+- frontend uses `window.__TAURI__` global API — no bundler, no npm frontend deps
+- CSS variables mirror the config TOML schema for seamless theming
+- JS modules are loaded via `<script type="module">` in dependency order (theme → api → search → ui → app)

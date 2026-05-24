@@ -1,0 +1,81 @@
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    max-height: 200px;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.98);
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.clip-card {
+  animation: fadeIn 0.25s ease both;
+}
+
+.clip-card.entering {
+  animation: slideIn 0.3s ease both;
+}
+
+.clip-card.removing {
+  animation: slideOut 0.25s ease both;
+  overflow: hidden;
+}
+
+.clip-card.shake {
+  animation: shake 0.4s ease;
+}
+
+.filter-btn {
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.search-input {
+  transition: border-color 0.2s ease;
+}
+
+.icon-btn {
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.clip-action-btn {
+  transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
