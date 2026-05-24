@@ -179,18 +179,24 @@ fn simulate_paste() {
 fn simulate_paste() {}
 
 #[tauri::command]
-fn copy_and_paste(text: String) -> Result<(), String> {
+fn copy_and_paste(text: String, monitor: State<'_, ClipboardMonitor>) -> Result<(), String> {
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     clip.set_text(&text).map_err(|e| e.to_string())?;
     drop(clip);
+    if let Ok(mut last) = monitor.last_app_copy.lock() {
+        *last = Some(text.clone());
+    }
     simulate_paste();
     Ok(())
 }
 
 #[tauri::command]
-fn copy_to_clipboard(text: String) -> Result<(), String> {
+fn copy_to_clipboard(text: String, monitor: State<'_, ClipboardMonitor>) -> Result<(), String> {
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    clip.set_text(text).map_err(|e| e.to_string())?;
+    clip.set_text(&text).map_err(|e| e.to_string())?;
+    if let Ok(mut last) = monitor.last_app_copy.lock() {
+        *last = Some(text);
+    }
     Ok(())
 }
 
@@ -211,12 +217,22 @@ fn check_clipboard(
         Err(_) => return Ok(None),
     };
 
-    let mut last = monitor.last_content.lock().map_err(|e| e.to_string())?;
-    if last.as_ref() == Some(&text) {
-        return Ok(None);
+    {
+        let mut last = monitor.last_content.lock().map_err(|e| e.to_string())?;
+        if last.as_ref() == Some(&text) {
+            return Ok(None);
+        }
+        *last = Some(text.clone());
     }
-    *last = Some(text.clone());
-    drop(last);
+
+    // If this text was just copied from within the app, don't re-add it
+    {
+        let mut app = monitor.last_app_copy.lock().map_err(|e| e.to_string())?;
+        if app.as_ref() == Some(&text) {
+            *app = None;
+            return Ok(None);
+        }
+    }
 
     match db.add_entry(&text, false) {
         Ok(entry) => Ok(Some(entry)),
