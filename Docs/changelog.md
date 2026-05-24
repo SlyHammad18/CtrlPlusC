@@ -94,3 +94,39 @@
 - `new_in_memory()` is `#[cfg(test)]` — only compiled in test builds
 - Search uses `LIKE '%query%'` (case-insensitive for ASCII by default in SQLite; for Unicode use `LIKE` is case-insensitive only for ASCII, but this suffices MVP)
 - Date filters are string-based match on SQLite filter names
+
+---
+
+## [Task 3] — Config Manager — 2026-05-24
+
+### ✅ What Changed
+- Created `src-tauri/src/config.rs` — full config module:
+  - `Config` struct with nested `ThemeConfig`, `WindowConfig`, `BehaviorConfig`, `HotkeyConfig`
+  - All fields match DESIGN.md §4.6 spec with `Default` impls and serde defaults
+  - Top-level fields: `autostart` (bool), `private_mode_password_hash` (string)
+  - `get_config_path()` — platform-aware path using `dirs::config_dir()`:
+    - Linux: `~/.config/ctrl-c/config.toml`
+    - Windows: `%APPDATA%/ctrl-c/config.toml`
+  - `load_config()` — reads TOML from disk, auto-creates default if missing
+  - `save_config()` — writes TOML to disk, creates parent dirs
+- Updated `src-tauri/src/lib.rs`:
+  - `mod config` declaration
+  - 2 new Tauri commands: `get_config`, `save_config`
+  - Config loaded at startup, managed as `Mutex<Config>` Tauri state
+  - `save_config` persists to disk and updates in-memory state
+
+### ✅ Tests
+- 4 unit tests all pass: `test_default_config`, `test_config_roundtrip`, `test_config_path_is_absolute`, `test_partial_config_uses_defaults`
+
+### ⏭️ What Was Not Changed
+- No frontend changes yet
+- No other Rust modules modified
+
+### ❌ Errors Faced
+- Build error: raw string literal `r#"..."#` conflicted with inner `"#FF0000"` quotes in test
+- Resolved: used `r##"..."##` delimiter instead
+
+### 📝 Notes
+- Config fields use `#[serde(default)]` so partial configs gracefully fill in defaults
+- Default config is auto-created on first run if the file doesn't exist
+- Path uses `dirs::config_dir()` which maps to XDG on Linux and AppData/Roaming on Windows
