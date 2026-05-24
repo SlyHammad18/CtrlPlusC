@@ -232,6 +232,10 @@ fn check_clipboard(
         Err(_) => return Ok(None),
     };
 
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+
     {
         let mut last = monitor.last_content.lock().map_err(|e| e.to_string())?;
         if last.as_ref() == Some(&text) {
@@ -267,6 +271,14 @@ pub fn run() {
 
     if is_locked {
         monitor.private_mode.store(true, Ordering::Relaxed);
+    } else if let Ok(mut clip) = arboard::Clipboard::new() {
+        if let Ok(t) = clip.get_text() {
+            if !t.trim().is_empty() {
+                if let Ok(mut last) = monitor.last_content.lock() {
+                    *last = Some(t);
+                }
+            }
+        }
     }
 
     if loaded_config.autostart {
