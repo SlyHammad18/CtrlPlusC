@@ -36,5 +36,5 @@ At initialization (Task 1), `Cargo.toml` will need dependencies listed in DESIGN
 
 ## Verification
 
-- Build/run dev: `cargo tauri dev`
+- Build/run dev: `npm run tauri dev` (not `cargo tauri dev` — CLI is an npm package)
 - Test: unit tests per Rust module (no test runner specified yet — check `Cargo.toml` when initialized)

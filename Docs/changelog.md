@@ -29,3 +29,33 @@
 - Wayland global shortcuts are the biggest risk — fallback strategy documented
 - Frontend is intentionally framework-free (no React/Vue) to keep bundle minimal
 - Ready to begin **Task 1: Project Initialization** on next prompt
+
+---
+
+## [Task 1] — Project Initialization — 2026-05-24
+
+### ✅ What Changed
+- Created `package.json` — minimal, with `@tauri-apps/cli` as devDep
+- Created `src/index.html` — minimal vanilla HTML shell
+- Created `src-tauri/Cargo.toml` — all Rust dependencies (tauri, rusqlite, serde, toml, argon2, aes-gcm, arboard, chrono, dirs)
+- Created `src-tauri/build.rs` — standard `tauri_build::build()` entry
+- Created `src-tauri/src/main.rs` — binary entry calling `ctrl_c_lib::run()`
+- Created `src-tauri/src/lib.rs` — Tauri builder with `generate_context!()`
+- Created `src-tauri/tauri.conf.json` — app name "Ctrl+C", window 420x600, no dev server
+- Created `src-tauri/capabilities/default.json` — permissions for core, window, event, clipboard-manager, global-shortcut
+- Created `src-tauri/icons/` — placeholder clipboard icons (32, 128, 256 PNG + ICO)
+- Created `.gitignore` — Rust/Node/OS artifacts
+
+### ⏭️ What Was Not Changed
+- No Rust module files yet (clipboard.rs, database.rs, etc.)
+- Frontend remains a single placeholder HTML page
+
+### ❌ Errors Faced
+- First build failed: missing system `-dev` packages (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, etc.)
+- Resolved: user installed them via apt
+- `cargo tauri dev` not available (CLI installed via npm, not cargo); use `npm run tauri dev` instead
+
+### 📝 Notes
+- App launches successfully with `npm run tauri dev`
+- Verify command: `npm run tauri dev` (not `cargo tauri dev`)
+- Build takes ~5 min on first run due to full dependency compilation
