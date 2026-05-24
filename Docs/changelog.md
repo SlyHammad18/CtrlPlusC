@@ -568,3 +568,74 @@
 - Theme reset works by saving an empty theme object (`{}`) — `serde(default)` fills in defaults on next load
 - Password setup redirects to the existing lock screen flow (reuses `showPasswordSetup`)
 - Autostart toggle calls both OS registration + config save
+
+---
+
+## [Unplanned] — Titlebar, Start Hidden, Copy & Paste — 2026-05-24
+
+### ✅ What Changed
+- **Updated `src-tauri/tauri.conf.json`**:
+  - Added `"decorations": false` — removes OS titlebar for custom titlebar
+  - Added `"visible": false` — window starts hidden (app lives in tray)
+- **Created custom titlebar in `src/index.html`**:
+  - Drag region via `data-tauri-drag-region` attribute
+  - Minimize button (SVG icon) → minimizes to taskbar
+  - Close button (X icon, red hover) → hides window to tray
+  - Removed `btn-date-filter` (duplicate with filter nav tabs below)
+- **Updated `src/styles/main.css`**:
+  - Added `.titlebar`, `.titlebar-title`, `.titlebar-actions`, `.titlebar-btn`, `.titlebar-btn-close` styles
+- **Updated `src-tauri/Cargo.toml`**:
+  - Added `windows-sys` dependency (Windows-only, for keyboard simulation)
+- **Updated `src-tauri/src/lib.rs`**:
+  - Added `copy_and_paste` Tauri command:
+    - Copies text to system clipboard via `arboard`
+    - Calls `simulate_paste()` which presses Ctrl+V:
+      - **Windows:** `keybd_event` via `windows-sys` (VK_CONTROL + VK_V, key down/up with 15ms delay)
+      - **Linux:** spawns `xdotool key ctrl+v`
+      - **Other:** no-op
+  - Added `simulate_paste()` platform-specific helper functions
+  - Registered `copy_and_paste` command in invoke_handler
+- **Updated `src/js/api.js`**:
+  - Added `copyAndPaste(text)` wrapper
+- **Updated `src/js/app.js`**:
+  - `copyById()` now calls `copyAndPaste` instead of `copyToClipboard`
+  - Close button (`btn-close`) → `appWindow.hide()`
+  - Minimize button (`btn-minimize`) → `appWindow.minimize()`
+
+### ✅ Tests
+- All 23 Rust tests pass (unchanged)
+
+### ⏭️ What Was Not Changed
+- Tasks 13 and 14 postponed
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Window starts hidden; user clicks tray icon to show it
+- Close button hides to tray (not closes); use tray menu "Quit" to exit
+- Copy + paste does NOT add duplicate entries — duplicate detection in `check_clipboard` compares with `last_content` and skips matches
+- `windows-sys` version 0.61 matches Tauri's dependency tree (no version conflict)
+
+---
+
+## [Unplanned] — Window Polish — 2026-05-24
+
+### ✅ What Changed
+- **Removed minimize button** from titlebar (`src/index.html` + `src/js/app.js`)
+- **Updated `src-tauri/tauri.conf.json`**:
+  - `"resizable": false` — window is fixed size
+  - `"transparent": true` — no white background behind the app
+  - `"shadow": false` — no window drop shadow
+- **Updated `src/styles/main.css`**:
+  - Removed `border-radius` from `.app` — eliminates border artifacts around the edge
+
+### ✅ Tests
+- All 23 Rust tests pass (unchanged)
+
+### ❌ Errors Faced
+- `windows-transparent` feature not available in Tauri 2.11.2 — removed it; `transparent: true` works without feature flag
+
+### 📝 Notes
+- Transparent window works via `transparent: true` in window config (no extra feature needed in Tauri v2)
+- Removing `border-radius` ensures the app background fills the entire window edge-to-edge

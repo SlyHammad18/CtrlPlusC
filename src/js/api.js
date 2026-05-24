@@ -50,6 +50,9 @@ window.api = (() => {
     unlockPrivateMode: (password) =>
       invoke('unlock_private_mode', { password }),
 
+    copyAndPaste: (text) =>
+      invoke('copy_and_paste', { text }),
+
     copyToClipboard: (text) =>
       invoke('copy_to_clipboard', { text }),
 

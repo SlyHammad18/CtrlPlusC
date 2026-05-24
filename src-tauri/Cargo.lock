@@ -618,6 +618,7 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-global-shortcut",
  "toml 0.8.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

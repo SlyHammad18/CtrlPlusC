@@ -17,12 +17,11 @@
   --danger: #EF4444;
   --success: #22C55E;
   --border: #475569;
-  --border-radius: 12px;
   --font-family: 'Inter', system-ui, sans-serif;
   --font-size: 14px;
   --header-height: 52px;
   --filter-height: 40px;
-  --footer-height: 40px;
+
 }
 
 html, body {
@@ -42,12 +41,78 @@ body {
 }
 
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
   background: var(--bg-primary);
-  border-radius: var(--border-radius);
   overflow: hidden;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 8px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.titlebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  padding-left: 4px;
+}
+
+.corner-btn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.corner-btn:hover {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.corner-btn-tr {
+  top: 0;
+  right: 0;
+}
+
+.corner-btn-tr:hover {
+  background: var(--danger);
+  color: white;
+}
+
+.corner-btn-br {
+  bottom: 0;
+  right: 0;
+}
+
+.corner-btn-br:hover {
+  background: transparent;
+  color: var(--accent);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .header {
@@ -217,18 +282,6 @@ body {
   opacity: 0.7;
 }
 
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: var(--footer-height);
-  padding: 0 12px;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-}
 
-.version {
-  font-size: 11px;
-  color: var(--text-secondary);
-  opacity: 0.6;
-}
+
+

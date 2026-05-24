@@ -16,7 +16,7 @@
       const entries = await window.api.getEntries(null, null);
       const entry = entries.find((e) => e.id === id);
       if (entry) {
-        await window.api.copyToClipboard(entry.content);
+        await window.api.copyAndPaste(entry.content);
         window.ui.showToast('Copied to clipboard');
       }
     } catch (err) {
@@ -225,6 +225,12 @@
     } catch (err) {
       console.error('Theme reset failed:', err);
     }
+  });
+
+  const appWindow = window.__TAURI__?.window?.getCurrentWindow?.();
+
+  document.getElementById('btn-close')?.addEventListener('click', () => {
+    if (appWindow) appWindow.hide();
   });
 
   await loadEntries('', 'all');

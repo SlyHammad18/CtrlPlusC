@@ -154,6 +154,39 @@ fn is_autostart_enabled() -> Result<bool, String> {
     autostart::is_autostart_enabled()
 }
 
+#[cfg(target_os = "windows")]
+fn simulate_paste() {
+    unsafe {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
+        const VK_CONTROL: u16 = 0x11;
+        const VK_V: u16 = 0x56;
+        keybd_event(VK_CONTROL as u8, 0, 0, 0);
+        keybd_event(VK_V as u8, 0, 0, 0);
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        keybd_event(VK_V as u8, 0, KEYEVENTF_KEYUP, 0);
+        keybd_event(VK_CONTROL as u8, 0, KEYEVENTF_KEYUP, 0);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn simulate_paste() {
+    let _ = std::process::Command::new("xdotool")
+        .args(["key", "ctrl+v"])
+        .spawn();
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn simulate_paste() {}
+
+#[tauri::command]
+fn copy_and_paste(text: String) -> Result<(), String> {
+    let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clip.set_text(&text).map_err(|e| e.to_string())?;
+    drop(clip);
+    simulate_paste();
+    Ok(())
+}
+
 #[tauri::command]
 fn copy_to_clipboard(text: String) -> Result<(), String> {
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
@@ -350,6 +383,7 @@ pub fn run() {
             enable_autostart,
             disable_autostart,
             is_autostart_enabled,
+            copy_and_paste,
             copy_to_clipboard,
             check_clipboard,
         ])
