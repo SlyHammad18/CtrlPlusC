@@ -1,4 +1,4 @@
-const theme = (() => {
+window.theme = (() => {
   function applyTheme(config) {
     const root = document.documentElement;
     const t = config.theme;
@@ -20,7 +20,7 @@ const theme = (() => {
 
   async function load() {
     try {
-      const config = await api.getConfig();
+      const config = await window.api.getConfig();
       applyTheme(config);
       return config;
     } catch (err) {

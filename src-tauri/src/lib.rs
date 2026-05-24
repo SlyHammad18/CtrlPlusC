@@ -9,7 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use tauri::{Manager, State};
+use tauri::State;
 
 fn get_db_path() -> PathBuf {
     let mut path = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -62,7 +62,50 @@ fn set_private_mode(
     locked: bool,
 ) -> Result<(), String> {
     monitor.private_mode.store(locked, Ordering::Relaxed);
+    if locked {
+        if let Ok(mut last) = monitor.last_content.lock() {
+            *last = None;
+        }
+    }
     Ok(())
+}
+
+#[tauri::command]
+fn copy_to_clipboard(text: String) -> Result<(), String> {
+    let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clip.set_text(text).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn check_clipboard(
+    db: State<'_, Arc<Database>>,
+    monitor: State<'_, ClipboardMonitor>,
+) -> Result<Option<Entry>, String> {
+    if monitor.private_mode.load(Ordering::Relaxed) {
+        return Ok(None);
+    }
+
+    let text = match arboard::Clipboard::new() {
+        Ok(mut clip) => match clip.get_text() {
+            Ok(t) => t,
+            Err(_) => return Ok(None),
+        },
+        Err(_) => return Ok(None),
+    };
+
+    let mut last = monitor.last_content.lock().map_err(|e| e.to_string())?;
+    if last.as_ref() == Some(&text) {
+        return Ok(None);
+    }
+    *last = Some(text.clone());
+    drop(last);
+
+    match db.add_entry(&text, false) {
+        Ok(entry) => Ok(Some(entry)),
+        Err(ref e) if e == "duplicate entry" => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -72,22 +115,12 @@ pub fn run() {
     let db = Arc::new(Database::new(&db_path_str).expect("Failed to initialize database"));
     let config = Mutex::new(config::load_config());
     let monitor = ClipboardMonitor::new();
-    let private_mode = monitor.private_mode.clone();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(db.clone())
         .manage(config)
         .manage(monitor)
-        .setup(move |app| {
-            let handle = app.handle().clone();
-            let poll_ms = {
-                let state_ref = handle.state::<Mutex<Config>>();
-                let guard = state_ref.lock().unwrap();
-                guard.behavior.poll_interval_ms
-            };
-            clipboard::start_monitoring(handle, db, poll_ms, private_mode);
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             add_entry,
             get_entries,
@@ -96,6 +129,8 @@ pub fn run() {
             get_config,
             save_config,
             set_private_mode,
+            copy_to_clipboard,
+            check_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

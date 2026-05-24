@@ -1,10 +1,23 @@
-const api = (() => {
-  const invoke = window.__TAURI__?.core?.invoke;
+window.api = (() => {
+  let invoke;
 
-  if (!invoke) {
-    console.error('Ctrl+C: Tauri IPC not available');
-    return {};
+  if (window.__TAURI__?.core?.invoke) {
+    invoke = window.__TAURI__.core.invoke;
+  } else if (window.__TAURI_INTERNALS__?.invoke) {
+    const rawInvoke = window.__TAURI_INTERNALS__.invoke;
+    invoke = (cmd, args) =>
+      rawInvoke(cmd, {
+        ...args,
+        __tauri_module: null,
+        __tauri_command: cmd,
+      });
+  } else {
+    console.error('Ctrl+C: No Tauri IPC available');
+    const es = document.getElementById('empty-state');
+    if (es) es.innerHTML = '<p style="color:var(--danger)">IPC not available</p>';
   }
+
+  if (!invoke) return {};
 
   return {
     addEntry: (content, isPrivate = false) =>
@@ -27,5 +40,11 @@ const api = (() => {
 
     setPrivateMode: (locked) =>
       invoke('set_private_mode', { locked }),
+
+    copyToClipboard: (text) =>
+      invoke('copy_to_clipboard', { text }),
+
+    checkClipboard: () =>
+      invoke('check_clipboard'),
   };
 })();

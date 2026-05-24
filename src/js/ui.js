@@ -1,4 +1,4 @@
-const ui = (() => {
+window.ui = (() => {
   const cardList = document.getElementById('card-list');
   const emptyState = document.getElementById('empty-state');
 
@@ -24,7 +24,7 @@ const ui = (() => {
 
     const preview = document.createElement('div');
     preview.className = 'clip-preview';
-    preview.innerHTML = search.highlight(
+    preview.innerHTML = window.search.highlight(
       entry.preview || entry.content,
       query
     );
@@ -90,7 +90,7 @@ const ui = (() => {
     const existing = cardList.querySelector(`[data-id="${entry.id}"]`);
     if (existing) return;
 
-    const card = createCard(entry, search.getQuery());
+    const card = createCard(entry, window.search.getQuery());
     card.classList.remove('entering');
     card.classList.add('entering');
     cardList.insertBefore(card, cardList.firstChild);
@@ -124,5 +124,102 @@ const ui = (() => {
     }
   }
 
-  return { renderCards, prependCard, removeCard, updatePinState };
+  function showToast(message, duration = 2000) {
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    requestAnimationFrame(() => {
+      toast.classList.add('toast-visible');
+    });
+
+    setTimeout(() => {
+      toast.classList.remove('toast-visible');
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
+  }
+
+  function showConfirm(message) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+
+      const box = document.createElement('div');
+      box.className = 'confirm-box';
+
+      const text = document.createElement('p');
+      text.className = 'confirm-text';
+      text.textContent = message;
+
+      const actions = document.createElement('div');
+      actions.className = 'confirm-actions';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'confirm-btn confirm-cancel';
+      cancelBtn.textContent = 'Cancel';
+
+      const okBtn = document.createElement('button');
+      okBtn.className = 'confirm-btn confirm-ok';
+      okBtn.textContent = 'Delete';
+
+      actions.appendChild(cancelBtn);
+      actions.appendChild(okBtn);
+      box.appendChild(text);
+      box.appendChild(actions);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      requestAnimationFrame(() => {
+        overlay.classList.add('confirm-visible');
+      });
+
+      function close(result) {
+        overlay.classList.remove('confirm-visible');
+        setTimeout(() => overlay.remove(), 200);
+        resolve(result);
+      }
+
+      cancelBtn.addEventListener('click', () => close(false));
+      okBtn.addEventListener('click', () => close(true));
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close(false);
+      });
+    });
+  }
+
+  function showError(message) {
+    const el = document.getElementById('empty-state');
+    if (!el) return;
+    el.style.display = 'flex';
+    el.innerHTML = `
+      <p class="empty-text" style="color:var(--danger)">${message}</p>
+      <button id="btn-retry" class="filter-btn" style="margin-top:8px">Retry</button>
+    `;
+    const retry = document.getElementById('btn-retry');
+    if (retry) {
+      retry.addEventListener('click', () => {
+        el.innerHTML = `
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+          </svg>
+          <p class="empty-text">No clipboard entries yet</p>
+          <p class="empty-hint">Copy something to get started</p>
+        `;
+        loadEntriesRef('');
+      });
+    }
+  }
+
+  let loadEntriesRef = () => {};
+
+  function setLoadEntries(fn) {
+    loadEntriesRef = fn;
+  }
+
+  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showError, setLoadEntries };
 })();

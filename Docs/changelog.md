@@ -239,3 +239,99 @@
 - frontend uses `window.__TAURI__` global API — no bundler, no npm frontend deps
 - CSS variables mirror the config TOML schema for seamless theming
 - JS modules are loaded via `<script type="module">` in dependency order (theme → api → search → ui → app)
+
+---
+
+## [Task 6] — Frontend: Card List & Actions — 2026-05-24
+
+### ✅ What Changed
+- Updated `src-tauri/src/lib.rs`:
+  - Added `copy_to_clipboard` Tauri command using `arboard::Clipboard::set_text()` — writes text to system clipboard via backend (registered in handler list)
+- Updated `src/js/api.js`:
+  - Added `copyToClipboard(text)` wrapper for the new backend command
+- Updated `src/js/ui.js`:
+  - Added `showToast(message)` — temporary bottom-center notification (2s auto-dismiss, fade animation)
+  - Added `showConfirm(message)` — modal overlay with Cancel/Delete buttons, promise-based API, click-outside-to-cancel
+- Updated `src/js/app.js`:
+  - Copy action now calls `api.copyToClipboard()` (backend via arboard) instead of `navigator.clipboard.writeText()`
+  - Card body click and Enter key both use shared `copyById()` helper
+  - Delete button now shows confirmation dialog via `ui.showConfirm()` before removing
+  - Keyboard Delete key also shows confirmation dialog
+  - Toast notification on successful copy/deletion
+  - `keydown` listener changed to async to support `await` in delete handler
+- Updated `src/styles/cards.css`:
+  - Added `.toast` and `.toast-visible` styles for notification popup
+  - Added `.confirm-overlay`, `.confirm-box`, `.confirm-actions`, `.confirm-btn` styles for the modal confirmation dialog
+
+### ✅ Tests
+- All 13 Rust tests pass (unchanged)
+- Build compiles clean, app launches without errors
+
+### ⏭️ What Was Not Changed
+- Pin action already worked: backend returns pinned-first sort, `loadEntries()` re-fetches after toggle — no changes needed
+- `clipboard-changed` listener already worked — no changes needed
+- Keyboard navigation already worked — only Delete key needed confirmation added
+
+### ❌ Errors Faced (Fixed)
+- **ES Module scoping bug**: `<script type="module">` scopes each file's top-level `const` declarations. `theme`, `api`, `search`, `ui` were invisible to `app.js` → `ReferenceError: theme is not defined`
+  - **Fix**: All shared objects assigned to `window.*`; all cross-module references prefixed with `window.`
+- **Clipboard never showed entries on Windows**: Background thread polling with `arboard` fails on Windows because `OpenClipboard` requires a thread with a Windows message pump. The `arboard` hidden window couldn't access clipboard data.
+  - **Fix**: Replaced background thread architecture with frontend-side polling → `check_clipboard` Tauri command runs on main thread where clipboard APIs work
+
+### 📝 Notes
+- Copy action uses `arboard` via Tauri command on main thread (not `navigator.clipboard`)
+- The `keydown` listener was made async — safe for keyboard events
+- Clipboard architecture changed from push (background thread → events) to pull (frontend polls command every 500ms)
+- `tauri-plugin-clipboard-manager` registered in lib.rs for future use
+
+---
+
+## [Task 6b] — Clipboard Architecture Fix & Debug — 2026-05-24
+
+### ✅ What Changed
+- **Rewrote `src-tauri/src/clipboard.rs`**:
+  - Removed background thread + `capture()` function + `start_monitoring()`
+  - Simplified to just `ClipboardMonitor` struct with `private_mode` (AtomicBool) and `last_content` (Mutex<Option<String>>) for shared state
+- **Rewrote `src-tauri/src/lib.rs`**:
+  - Added `check_clipboard` Tauri command: runs on main thread, creates `arboard::Clipboard`, reads text, compares with `monitor.last_content`, calls `db.add_entry()` if changed, returns `Option<Entry>`
+  - Updated `set_private_mode` to also reset `last_content` when locking
+  - Registered `tauri_plugin_clipboard_manager::init()` plugin
+  - Removed `setup` closure (no more background thread to start)
+  - Removed unused `Manager` import
+- **Updated `src/js/api.js`**:
+  - Added `__TAURI_INTERNALS__` fallback path for `invoke`
+  - Added `checkClipboard()` wrapper
+  - All module values assigned to `window.api`
+- **Updated `src/js/theme.js`**:
+  - Uses `window.api.getConfig()` (not bare `api`)
+  - Assigned to `window.theme`
+- **Updated `src/js/search.js`**:
+  - Assigned to `window.search`
+- **Updated `src/js/ui.js`**:
+  - Uses `window.search.highlight()` and `window.search.getQuery()` everywhere
+  - Added `showError(message)` — renders red error in empty state with Retry button
+  - Added `setLoadEntries(fn)` — stores refresh callback for Retry button
+  - Assigned to `window.ui`
+- **Rewrote `src/js/app.js`**:
+  - All references use `window.` prefix (`window.theme`, `window.api`, etc.)
+  - Removed `clipboard-changed` event listener (no longer emitted)
+  - Added `setInterval` polling `check_clipboard` every 500ms
+  - Added 5-second full refresh interval as backup
+  - Added Refresh button handler for `btn-refresh`
+- **Updated `src/index.html`**:
+  - Added "Refresh" button to empty state
+
+### ✅ Tests
+- All 13 Rust tests pass (unchanged)
+
+### ⏭️ What Was Not Changed
+- Database, config modules unchanged
+- All existing Tauri commands preserved (add_entry, get_entries, delete_entry, toggle_pin, get_config, save_config, copy_to_clipboard)
+
+### ❌ Errors Faced (Fixed in this task)
+- `window.__TAURI__.core.invoke` undefined on some Tauri v2 configurations → fallback to `window.__TAURI_INTERNALS__.invoke` with correct args format
+
+### 📝 Notes
+- Windows clipboard API (`OpenClipboard`/`GetClipboardData`) requires the calling thread to have a Windows message queue. Creating `arboard::Clipboard` inside a `thread::spawn` creates a hidden HWND but the thread's sleep-loop never pumps messages, so clipboard reads fail silently.
+- The fix decouples clipboard access from the polling thread: `check_clipboard` runs as a Tauri command on the main event-loop thread which has a proper message pump.
+- Future optimization: cache the `arboard::Clipboard` instance in Tauri managed state instead of creating a new one per poll (but `Clipboard` is not `Send`, so it can't be shared across threads easily).

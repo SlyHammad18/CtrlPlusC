@@ -1,4 +1,4 @@
-const search = (() => {
+window.search = (() => {
   let debounceTimer = null;
   let currentQuery = '';
   let currentFilter = 'all';
