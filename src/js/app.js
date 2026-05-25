@@ -194,6 +194,8 @@
       document.getElementById('setting-autostart').checked = enabled;
     } catch (_) { /* best effort */ }
 
+    document.getElementById('setting-font').value = cfg.theme?.font_family || 'Inter, system-ui, sans-serif';
+
     const status = await window.api.getPrivateModeStatus();
     const pwBtn = document.getElementById('btn-settings-password');
     pwBtn.textContent = status.has_password ? 'Change Password' : 'Set Password';
@@ -294,6 +296,26 @@
     }
   });
 
+  document.getElementById('setting-font')?.addEventListener('blur', async (e) => {
+    const val = e.target.value.trim() || 'Inter, system-ui, sans-serif';
+    try {
+      const cfg = await window.api.getConfig();
+      cfg.theme.font_family = val;
+      await window.api.saveConfig(cfg);
+      document.documentElement.style.setProperty('--font-family', val);
+      window.ui.showToast('Font updated');
+    } catch (err) {
+      console.error('Font save failed:', err);
+    }
+  });
+
+  document.getElementById('setting-font')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.target.blur();
+    }
+  });
+
   document.getElementById('btn-settings-password')?.addEventListener('click', () => {
     window.ui.hideSettings();
     window.ui.showPasswordSetup();
@@ -313,6 +335,7 @@
     { key: 'success', label: 'Success' },
     { key: 'border', label: 'Border' },
     { key: 'border_card', label: 'Card Border' },
+    { key: 'font_family', label: 'Font Family' },
   ];
 
   const presets = [

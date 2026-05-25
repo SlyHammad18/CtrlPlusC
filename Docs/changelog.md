@@ -704,6 +704,44 @@
 
 ---
 
+## [Unplanned] — Custom Font Setting — 2026-05-25
+
+### ✅ What Changed
+- `src/index.html` — Added "Font" row in settings panel with a text input for custom font family
+- `src/styles/settings.css` — Added `.settings-font-input` styles (monospace, themed, focus state)
+- `src/js/app.js` — Added `font_family` to theme editor fields; font input populates on settings open; saves on blur/Enter and applies immediately via `--font-family` CSS variable
+
+### ⏭️ What Was Not Changed
+- No backend Rust changes (font_family was already in ThemeConfig)
+- Existing theme.js handles applying the font
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Font change applies immediately when the user types and presses Enter or clicks away
+- Also editable in the Theme customization panel
+
+---
+
+## [Unplanned] — App Icons from Assets Folder — 2026-05-25
+
+### ✅ What Changed
+- Copied `Assets/logo.ico` → `src-tauri/icons/icon.ico`
+- Copied `Assets/logo.png` → `src-tauri/icons/32x32.png`
+- Copied `Assets/logo.png` → `src-tauri/icons/128x128.png`
+- Copied `Assets/logo.png` → `src-tauri/icons/128x128@2x.png`
+- All app icons (bundle icons, tray icon, window icon) now use the project's `Assets/logo` files instead of generic placeholders
+
+### ⏭️ What Was Not Changed
+- `icon.icns` and `icon.svg` left as-is (no equivalents in Assets)
+- `tauri.conf.json` icon paths unchanged (filenames match)
+
+### ❌ Errors Faced
+- None
+
+---
+
 ## [Unplanned] — Wayland Toggle via Unix Socket IPC — 2026-05-24
 
 ### ✅ What Changed

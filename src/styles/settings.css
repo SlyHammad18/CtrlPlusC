@@ -189,6 +189,24 @@
   background: white;
 }
 
+.settings-font-input {
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  width: 140px;
+  outline: none;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease;
+}
+
+.settings-font-input:focus {
+  border-color: var(--accent);
+}
+
 .theme-overlay {
   position: absolute;
   inset: 0;
