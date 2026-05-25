@@ -82,5 +82,8 @@ window.api = (() => {
 
     copyImageAndPaste: (id) =>
       invoke('copy_image_and_paste', { id }),
+
+    updateEntry: (id, content) =>
+      invoke('update_entry', { id, content }),
   };
 })();

@@ -40,6 +40,36 @@
     loadEntries(window.search.getQuery(), window.search.getFilter());
   });
 
+  document.getElementById('btn-edit-save')?.addEventListener('click', async () => {
+    const overlay = document.getElementById('edit-overlay');
+    const textarea = document.getElementById('edit-textarea');
+    if (!overlay || !textarea) return;
+    const id = parseInt(overlay.dataset.editId);
+    const content = textarea.value.trim();
+    if (!content) return;
+    try {
+      await window.api.updateEntry(id, content);
+      window.ui.hideEdit();
+      window.ui.showToast('Entry updated');
+      loadEntries(window.search.getQuery(), window.search.getFilter());
+    } catch (err) {
+      console.error('Update failed:', err);
+      window.ui.showError('Update failed: ' + (err?.message || err));
+    }
+  });
+
+  document.getElementById('btn-edit-cancel')?.addEventListener('click', () => {
+    window.ui.hideEdit();
+  });
+
+  document.getElementById('btn-edit-close')?.addEventListener('click', () => {
+    window.ui.hideEdit();
+  });
+
+  document.getElementById('edit-overlay')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) window.ui.hideEdit();
+  });
+
   const cardList = document.getElementById('card-list');
   cardList.addEventListener('click', async (e) => {
     const card = e.target.closest('.clip-card');
@@ -63,6 +93,10 @@
       } catch (err) {
         console.error('Toggle pin failed:', err);
       }
+    } else if (btn.classList.contains('edit-btn')) {
+      const entry = await window.api.getEntries(null, null).then(entries => entries.find(e => e.id === id));
+      if (entry) window.ui.showEdit(id, entry.content);
+      return;
     } else if (btn.classList.contains('delete-btn')) {
       const confirmed = await window.ui.showConfirm('Delete this clipboard entry?');
       if (!confirmed) return;

@@ -828,3 +828,50 @@
 - Socket path uses `XDG_RUNTIME_DIR` (typically `/run/user/<uid>/`) for standard compliance, falls back to `~/.cache/`
 - Stale socket file is removed on listener startup
 - The DE keybind should run `/path/to/ctrl-c toggle` (the app prints the exact path at startup)
+
+---
+
+## [Unplanned] — Edit Copied Text Data — 2026-05-25
+
+### ✅ What Changed
+- **`src-tauri/src/database.rs`**:
+  - Added `update_entry(id, content)` — updates `content` and `preview` for text entries only
+  - Returns error if entry not found or if `content_type` is not `'text'` (images are read-only)
+  - Preview auto-regenerated from new content (first 100 chars + "...")
+- **`src-tauri/src/lib.rs`**:
+  - Added `update_entry` Tauri command — proxies to `db.update_entry(id, content)`
+  - Registered in `invoke_handler`
+- **`src/js/api.js`**:
+  - Added `updateEntry(id, content)` wrapper
+- **`src/index.html`**:
+  - Added edit overlay modal (`.edit-overlay`, `.edit-panel`) with textarea, Save/Cancel buttons, close icon
+  - Backdrop click closes the overlay
+- **`src/js/ui.js`**:
+  - Added `showEdit(id, content)` — populates textarea with entry content, shows overlay, auto-focuses
+  - Added `hideEdit()` — hides overlay
+  - Exported both functions
+- **`src/js/app.js`**:
+  - Added edit button handler in card click delegation — fetches full entry content, calls `showEdit`
+  - Save button handler — calls `api.updateEntry()`, refreshes list, shows toast
+  - Cancel/close button handlers — call `hideEdit()`
+- **`src/styles/settings.css`**:
+  - Added edit overlay styles (`.edit-overlay`, `.edit-panel`, `.edit-textarea`, `.edit-footer`, etc.)
+- **`src/styles/cards.css`**:
+  - Added `.clip-action-btn.edit-btn:hover` style
+
+### ✅ Tests
+- All 30 Rust tests pass (27 existing + 3 new: `test_update_entry`, `test_update_entry_nonexistent`, `test_update_entry_image_rejected`)
+- All 5 JS modules pass syntax check
+
+### ⏭️ What Was Not Changed
+- Image entries are not editable (update_entry rejects `content_type = 'image'`)
+- No changes to clipboard polling, config, hotkey, autostart, private_mode
+- No database migrations needed (existing schema supports it)
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Edit button only appears on text cards (not image cards)
+- Content validation: empty/save trimmed content prevents empty saves
+- Overlay respects the app's font family and theme

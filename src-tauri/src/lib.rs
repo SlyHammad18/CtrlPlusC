@@ -148,6 +148,11 @@ fn toggle_pin(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn update_entry(state: State<'_, Arc<Database>>, id: i64, content: String) -> Result<(), String> {
+    state.update_entry(id, &content)
+}
+
+#[tauri::command]
 fn get_config(state: State<'_, Mutex<Config>>) -> Result<Config, String> {
     state.lock().map_err(|e| e.to_string()).map(|c| c.clone())
 }
@@ -342,6 +347,15 @@ fn copy_image_and_paste(
         return Err(format!("Invalid image data: {}x{} buffer {} (expected {})", w, h, raw_rgba.len(), expected_len));
     }
 
+    let hash = hash_bytes(&raw_rgba);
+
+    if let Ok(mut last) = monitor.last_image_hash.lock() {
+        *last = Some(hash);
+    }
+    if let Ok(mut last) = monitor.last_app_copy.lock() {
+        *last = Some("__image__".to_string());
+    }
+
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     let img_data = arboard::ImageData {
         width: w as usize,
@@ -350,9 +364,6 @@ fn copy_image_and_paste(
     };
     clip.set_image(img_data).map_err(|e| e.to_string())?;
     drop(clip);
-    if let Ok(mut last) = monitor.last_app_copy.lock() {
-        *last = Some("__image__".to_string());
-    }
     let _ = window.hide();
     std::thread::sleep(std::time::Duration::from_millis(50));
     simulate_paste();
@@ -374,11 +385,14 @@ fn register_hotkey(
 
 #[tauri::command]
 fn copy_to_clipboard(text: String, monitor: State<'_, ClipboardMonitor>) -> Result<(), String> {
+    if let Ok(mut last) = monitor.last_content.lock() {
+        *last = Some(text.clone());
+    }
+    if let Ok(mut last) = monitor.last_app_copy.lock() {
+        *last = Some(text.clone());
+    }
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     clip.set_text(&text).map_err(|e| e.to_string())?;
-    if let Ok(mut last) = monitor.last_app_copy.lock() {
-        *last = Some(text);
-    }
     Ok(())
 }
 
@@ -425,7 +439,7 @@ fn check_clipboard(
             }
             {
                 let mut app = monitor.last_app_copy.lock().map_err(|e| e.to_string())?;
-                if app.as_ref() == Some(&text) {
+                if app.as_ref() == Some(&text) || app.as_deref() == Some("__image__") {
                     *app = None;
                     return Ok(None);
                 }
@@ -660,6 +674,7 @@ pub fn run() {
             delete_entry,
             clear_all,
             toggle_pin,
+            update_entry,
             get_config,
             save_config,
             get_private_mode_status,

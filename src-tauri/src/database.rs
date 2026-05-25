@@ -210,6 +210,25 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_entry(&self, id: i64, content: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let preview = if content.len() > 100 {
+            format!("{}...", &content[..100])
+        } else {
+            content.to_string()
+        };
+        let affected = conn
+            .execute(
+                "UPDATE entries SET content = ?1, preview = ?2 WHERE id = ?3 AND content_type = 'text'",
+                params![content, preview, id],
+            )
+            .map_err(|e| e.to_string())?;
+        if affected == 0 {
+            return Err("Entry not found or is not editable".to_string());
+        }
+        Ok(())
+    }
+
     pub fn clear_all(&self) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute("DELETE FROM entries", []).map_err(|e| e.to_string())?;
@@ -421,5 +440,30 @@ mod tests {
         let db = setup();
         let result = db.get_entry_image_data(999).unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_update_entry() {
+        let db = setup();
+        let entry = db.add_entry("original text", false).unwrap();
+        db.update_entry(entry.id, "edited text").unwrap();
+        let entries = db.get_entries(None, None).unwrap();
+        assert_eq!(entries[0].content, "edited text");
+        assert_eq!(entries[0].preview, "edited text");
+    }
+
+    #[test]
+    fn test_update_entry_nonexistent() {
+        let db = setup();
+        let result = db.update_entry(999, "text");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_update_entry_image_rejected() {
+        let db = setup();
+        let entry = db.add_image_entry(&[0u8; 16], 2, 2, false).unwrap();
+        let result = db.update_entry(entry.id, "text");
+        assert!(result.is_err());
     }
 }

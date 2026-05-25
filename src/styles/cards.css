@@ -97,11 +97,12 @@
 .clip-action-btn.copy-btn:hover {
   color: var(--accent);
 }
-
+.clip-action-btn.edit-btn:hover {
+  color: var(--accent);
+}
 .clip-action-btn.pin-btn:hover {
   color: var(--accent);
 }
-
 .clip-action-btn.delete-btn:hover {
   color: var(--danger);
 }
