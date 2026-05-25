@@ -35,6 +35,12 @@
             <polygon points="6,4 20,12 6,20"/>
           </svg>
         </button>
+        <button id="btn-filter" class="icon-btn filter-toggle" title="Filter by app">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+          </svg>
+          <span id="filter-badge" class="filter-badge" style="display:none"></span>
+        </button>
         <button id="btn-lock" class="icon-btn" title="Private Mode">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
@@ -44,6 +50,30 @@
       </div>
     </header>
 
+
+    <div id="filter-chip" class="filter-chip" style="display:none">
+      <span id="filter-chip-label" class="filter-chip-label"></span>
+      <button id="btn-filter-chip-close" class="filter-chip-close" title="Clear filter">
+        <svg width="12" height="12" viewBox="0 0 12 12"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="2"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+    </div>
+
+    <div id="filter-panel" class="filter-panel">
+      <div class="filter-panel-header">
+        <span class="filter-panel-title">Filter by app</span>
+        <div class="filter-panel-actions">
+          <button id="btn-filter-clear" class="filter-panel-clear">Clear all</button>
+          <button id="btn-filter-close" class="icon-btn filter-panel-close" title="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="filter-search-wrap">
+        <svg class="filter-search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="filter-search-input" class="filter-search-input" placeholder="Search apps..." />
+      </div>
+      <div id="filter-app-list" class="filter-app-list"></div>
+    </div>
 
     <main id="card-list" class="card-list">
       <div id="empty-state" class="empty-state">

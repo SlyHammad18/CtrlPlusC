@@ -115,8 +115,14 @@ fn get_entries(
     state: State<'_, Arc<Database>>,
     query: Option<String>,
     date_filter: Option<String>,
+    source_app: Option<String>,
 ) -> Result<Vec<Entry>, String> {
-    state.get_entries(query.as_deref(), date_filter.as_deref())
+    state.get_entries(query.as_deref(), date_filter.as_deref(), source_app.as_deref())
+}
+
+#[tauri::command]
+fn get_app_names(state: State<'_, Arc<Database>>) -> Result<Vec<String>, String> {
+    state.get_app_names()
 }
 
 #[tauri::command]
@@ -135,9 +141,19 @@ fn clear_all(state: State<'_, Arc<Database>>, monitor: State<'_, ClipboardMonito
                 }
             }
         }
-    }
-    if let Ok(mut last) = monitor.last_image_hash.lock() {
-        *last = None;
+        if let Ok(img) = clip.get_image() {
+            let w = img.width as u32;
+            let h = img.height as u32;
+            if w > 0 && h > 0 && w <= 3840 && h <= 2160 {
+                let raw = img.bytes.to_vec();
+                let expected = (w as usize) * (h as usize) * 4;
+                if raw.len() == expected {
+                    if let Ok(mut last) = monitor.last_image_hash.lock() {
+                        *last = Some(hash_bytes(&raw));
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -150,6 +166,11 @@ fn toggle_pin(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> {
 #[tauri::command]
 fn update_entry(state: State<'_, Arc<Database>>, id: i64, content: String) -> Result<(), String> {
     state.update_entry(id, &content)
+}
+
+#[tauri::command]
+fn set_entry_name(state: State<'_, Arc<Database>>, id: i64, name: String) -> Result<(), String> {
+    state.set_entry_name(id, &name)
 }
 
 #[tauri::command]
@@ -282,6 +303,71 @@ fn simulate_paste() {
 
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn simulate_paste() {}
+
+fn get_foreground_app() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        unsafe {
+            use windows_sys::Win32::Foundation::CloseHandle;
+            use windows_sys::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION};
+            use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+
+            let hwnd = GetForegroundWindow();
+            if hwnd.is_null() {
+                return String::new();
+            }
+
+            let mut pid: u32 = 0;
+            let _ = GetWindowThreadProcessId(hwnd, &mut pid);
+            if pid == 0 {
+                return String::new();
+            }
+
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return String::new();
+            }
+
+            let mut buf = [0u16; 260];
+            let mut size = buf.len() as u32;
+            let result = QueryFullProcessImageNameW(process, 0, buf.as_mut_ptr(), &mut size);
+            let _ = CloseHandle(process);
+
+            if result != 0 && size > 0 {
+                let path = String::from_utf16_lossy(&buf[..size as usize]);
+                if let Some(stem) = std::path::Path::new(&path).file_stem() {
+                    let name = stem.to_string_lossy().to_string();
+                    if !name.is_empty() {
+                        return name;
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(out) = std::process::Command::new("xdotool")
+            .args(["getactivewindow", "getwindowpid"])
+            .output()
+        {
+            if out.status.success() {
+                let pid = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !pid.is_empty() {
+                    let comm_path = format!("/proc/{}/comm", pid);
+                    if let Ok(comm) = std::fs::read_to_string(&comm_path) {
+                        let name = comm.trim().to_string();
+                        if !name.is_empty() {
+                            return name;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    String::new()
+}
 
 #[tauri::command]
 fn copy_and_paste(text: String, monitor: State<'_, ClipboardMonitor>, window: tauri::Window) -> Result<(), String> {
@@ -444,7 +530,8 @@ fn check_clipboard(
                     return Ok(None);
                 }
             }
-            match db.add_entry(&text, false) {
+            let app = get_foreground_app();
+            match db.add_entry_with_app(&text, false, &app) {
                 Ok(entry) => return Ok(Some(entry)),
                 Err(ref e) if e == "duplicate entry" => return Ok(None),
                 Err(e) => return Err(e),
@@ -492,8 +579,8 @@ fn check_clipboard(
             }
         }
 
-        // Store raw RGBA directly — no PNG encoding in the polling path
-        match db.add_image_entry(&raw_bytes, w, h, false) {
+        let app = get_foreground_app();
+        match db.add_image_entry_with_app(&raw_bytes, w, h, false, &app) {
             Ok(entry) => return Ok(Some(entry)),
             Err(ref e) if e == "duplicate entry" => return Ok(None),
             Err(e) => return Err(e),
@@ -675,6 +762,7 @@ pub fn run() {
             clear_all,
             toggle_pin,
             update_entry,
+            set_entry_name,
             get_config,
             save_config,
             get_private_mode_status,
@@ -691,6 +779,7 @@ pub fn run() {
             check_clipboard,
             set_monitoring,
             register_hotkey,
+            get_app_names,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

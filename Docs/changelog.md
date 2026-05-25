@@ -875,3 +875,153 @@
 - Edit button only appears on text cards (not image cards)
 - Content validation: empty/save trimmed content prevents empty saves
 - Overlay respects the app's font family and theme
+
+---
+
+## [Unplanned] — Source App Tracking & Filter — 2026-05-25
+
+### ✅ What Changed
+- **`src-tauri/Cargo.toml`**: Added `Win32_UI_WindowsAndMessaging` feature to `windows-sys` for `GetForegroundWindow`/`GetWindowTextW`
+- **`src-tauri/src/database.rs`**:
+  - Added `source_app TEXT NOT NULL DEFAULT ''` column + migration
+  - Added `source_app` field to `Entry` struct
+  - Added `add_entry_with_app()` and `add_image_entry_with_app()` methods
+  - Updated `add_entry_ext()` signature with `source_app` param
+  - Updated `get_entries()` to filter by `source_app` (third param)
+  - Added `get_app_names()` — returns distinct non-empty app names
+  - All existing tests updated for new 3-param `get_entries` signature
+- **`src-tauri/src/lib.rs`**:
+  - Added `get_foreground_app()` helper (Windows: `GetForegroundWindow`+`GetWindowTextW`, Linux: `xdotool getactivewindow getwindowname`)
+  - `check_clipboard` now captures `source_app` via `get_foreground_app()` for both text and images
+  - Updated `get_entries` Tauri command with `source_app` filter param
+  - Added `get_app_names` Tauri command
+  - Registered `get_app_names` in invoke handler
+- **`src/index.html`**:
+  - Added filter icon button (funnel SVG) in header actions
+  - Added collapsible filter panel below header with app list + Clear button
+- **`src/styles/cards.css`**:
+  - Added `.clip-source-app` style (small, dimmed text on each card)
+  - Added `.filter-panel`, `.filter-app-btn`, `.filter-panel-clear` styles
+- **`src/js/api.js`**: Added `getAppNames()`, updated `getEntries()` with `sourceApp` param
+- **`src/js/search.js`**: Added `currentApp` state, `getAppFilter()`, `setAppFilter()` — triggers search refresh
+- **`src/js/ui.js`**:
+  - Cards show `source_app` label (if non-empty)
+  - Added `showFilterPanel(appNames)` — renders app buttons, toggles on click, closes on selection
+  - Added `hideFilterPanel()`
+- **`src/js/app.js`**:
+  - `loadEntries()` passes `sourceApp` from `search.getAppFilter()`
+  - Filter icon click toggles panel, fetches app names from backend
+  - Clear button resets app filter
+
+### ✅ Tests
+- All 29 Rust tests pass
+- All 5 JS modules pass syntax check
+
+### ⏭️ What Was Not Changed
+- No changes to config, hotkey, autostart, private_mode modules
+- No changes to clipboard polling interval or architecture
+- Existing filters (date, search query) continue to work alongside app filter
+
+### ❌ Errors Faced
+- Windows compile error: `hwnd.0` is not a field on `*mut c_void` — fixed with `hwnd.is_null()`
+- Test `test_search` had an extra assertion from replaceAll — removed
+
+### 📝 Notes
+- Source app is captured as the **foreground window title** at the moment of clipboard capture
+- Empty app names (`''`) are excluded from the app list and filtering
+- The app filter combines with date filter and search query (AND logic)
+- On Wayland, `xdotool` may not be available; app name will be empty string
+- Filter icon toggles the panel open/closed; selecting an app closes the panel and applies filter
+
+---
+
+## [Unplanned] — App Name Fix + Clear All Image Fix — 2026-05-25
+
+### ✅ What Changed
+- **`clear_all` (lib.rs)**: Now reads the current clipboard image and stores its hash (same as text handling), preventing the image from being re-added on next poll
+- **`get_foreground_app()` (lib.rs)**:
+  - **Windows**: Now gets the **executable file stem** (e.g., `chrome` from `C:\...\chrome.exe`) via `GetWindowThreadProcessId` → `OpenProcess` → `QueryFullProcessImageNameW` → `Path::file_stem()` instead of the full window title
+  - **Linux**: Gets process name from `/proc/PID/comm` via `xdotool getactivewindow getwindowpid` instead of window title
+- **`Cargo.toml`**: Added `Win32_System_Threading` and `Win32_Foundation` features to `windows-sys`
+
+### ✅ Tests
+- All 29 Rust tests pass
+- All JS modules pass syntax check
+
+### ⏭️ What Was Not Changed
+- No database changes (source_app already exists)
+- No frontend changes needed (source_app display and filter remain the same)
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Executable name is more stable than window title — "chrome" instead of "Some Video - YouTube - Google Chrome"
+- On Windows, uses `PROCESS_QUERY_LIMITED_INFORMATION` (doesn't require extra privileges)
+- On Linux, reads `/proc/PID/comm` which gives the kernel's process name (e.g., "chrome")
+
+---
+
+## [Unplanned] — App Name Formatting + Improved Filter UI — 2026-05-25
+
+### ✅ What Changed
+- **`src/js/ui.js`**: Added `APP_NAME_MAP` (70+ mappings from executable names to common display names like "chrome"→"Google Chrome", "code"→"Visual Studio Code") and `formatAppName()` function; card labels and filter buttons now show formatted names
+- **Filter UI overhaul**:
+  - **Badge**: Tiny dot on the filter toggle icon when a filter is active
+  - **Chip**: Active filter shown as a persistent chip below the header with close button
+  - **Dropdown panel**: Animated slide-down panel with search input, scrollable app list, close button
+  - **Search within filter**: Text input filters the app list in real-time (by formatted name)
+  - **List layout**: Vertical list (not pills) with hover highlights and active indicator dot
+  - **Close handlers**: Close button, Escape key in search input
+  - **`updateFilterBadge()`** called on every filter change to sync badge/chip visibility
+
+### ✅ Tests
+- All 29 Rust tests pass
+- All JS modules pass syntax check
+
+### ⏭️ What Was Not Changed
+- Backend unchanged (no Rust changes this round)
+
+### ❌ Errors Faced
+- Invalid JS object key `1password:` — fixed with `'1password':`
+
+### 📝 Notes
+- `formatAppName()` runs in the frontend only; raw executable name stays in DB for correct filtering
+- Unknown executables get first-letter capitalization (e.g., "myapp"→"Myapp")
+
+---
+
+## [Unplanned] — Image Naming & Search — 2026-05-25
+
+### ✅ What Changed
+- **`database.rs`**:
+  - Added `name TEXT NOT NULL DEFAULT ''` column + migration
+  - Added `name` field to `Entry` struct (in SELECT, INSERT, construction)
+  - **Search overhaul**: query now matches `(content_type = 'text' AND content LIKE ?) OR name LIKE ?` — images with a matching name appear in search results
+  - Added `set_entry_name(id, name)` method
+- **`lib.rs`**: Added `set_entry_name` Tauri command + handler registration
+- **`js/api.js`**: Added `setEntryName(id, name)` wrapper
+- **`js/ui.js`**: Every card now shows a name row at the top:
+  - Has name → displayed in bold (`has-name`)
+  - No name → italic hint "Add name…" (`no-name`)
+  - **Inline editing**: click the name area → turns into an input field
+  - Enter saves, Escape cancels, blur saves
+- **`styles/cards.css`**: Added `.clip-name`, `.clip-name.has-name`, `.clip-name.no-name`, `.clip-name-input` styles
+- **`js/app.js`**: Added `startNameEdit()` — handles inline rename with Enter/blur save and Escape cancel
+
+### ✅ Tests
+- All 29 Rust tests pass
+- All JS modules pass syntax check
+
+### ⏭️ What Was Not Changed
+- Existing search behavior unchanged for text entries without names
+- Date filters, app filters, pinning etc. unaffected
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Names are **not** auto-generated — user must set them
+- Search for text entries still matches content; images without names are excluded from search
+- Once named, images appear in search results when the query matches their name
+- Name editing is inline (no modal overlay) for speed

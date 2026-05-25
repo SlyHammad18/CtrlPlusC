@@ -1,3 +1,88 @@
+const APP_NAME_MAP = {
+  chrome: 'Google Chrome',
+  firefox: 'Firefox',
+  msedge: 'Microsoft Edge',
+  edge: 'Microsoft Edge',
+  opera: 'Opera',
+  iexplore: 'Internet Explorer',
+  code: 'Visual Studio Code',
+  codeoss: 'VS Code (OSS)',
+  sublime_text: 'Sublime Text',
+  notepad: 'Notepad',
+  notepadpp: 'Notepad++',
+  winword: 'Microsoft Word',
+  wordpad: 'WordPad',
+  excel: 'Microsoft Excel',
+  powerpnt: 'Microsoft PowerPoint',
+  outlook: 'Microsoft Outlook',
+  onenote: 'Microsoft OneNote',
+  mspub: 'Microsoft Publisher',
+  access: 'Microsoft Access',
+  thunderbird: 'Thunderbird',
+  slack: 'Slack',
+  discord: 'Discord',
+  telegram: 'Telegram',
+  whatsapp: 'WhatsApp',
+  signal: 'Signal',
+  zoom: 'Zoom',
+  teams: 'Microsoft Teams',
+  terminal: 'Terminal',
+  windowsterminal: 'Windows Terminal',
+  cmd: 'Command Prompt',
+  powershell: 'PowerShell',
+  pwsh: 'PowerShell',
+  explorer: 'File Explorer',
+  sublime: 'Sublime Text',
+  atom: 'Atom',
+  brackets: 'Brackets',
+  postman: 'Postman',
+  insomnia: 'Insomnia',
+  figma: 'Figma',
+  photoshop: 'Adobe Photoshop',
+  illustrator: 'Adobe Illustrator',
+  acrobat: 'Adobe Acrobat',
+  acrord32: 'Adobe Acrobat',
+  spotify: 'Spotify',
+  vlc: 'VLC Media Player',
+  mpc: 'Media Player Classic',
+  mpc64: 'Media Player Classic',
+  putty: 'PuTTY',
+  winscp: 'WinSCP',
+  filezilla: 'FileZilla',
+  gitbash: 'Git Bash',
+  bash: 'Bash',
+  docker: 'Docker',
+  docker_desktop: 'Docker Desktop',
+  dbeaver: 'DBeaver',
+  mysqlworkbench: 'MySQL Workbench',
+  sqlserver: 'SQL Server Management Studio',
+  ssms: 'SQL Server Management Studio',
+  obsidian: 'Obsidian',
+  notion: 'Notion',
+  evernote: 'Evernote',
+  brave: 'Brave',
+  vivaldi: 'Vivaldi',
+  tor: 'Tor Browser',
+  chromimum: 'Chromium',
+  wechat: 'WeChat',
+  dingtalk: 'DingTalk',
+  feishu: 'Feishu',
+  alacritty: 'Alacritty',
+  kitty: 'Kitty',
+  iterm2: 'iTerm2',
+  mobaxterm: 'MobaXterm',
+  bitwarden: 'Bitwarden',
+  keepass: 'KeePass',
+  '1password': '1Password',
+};
+
+function formatAppName(name) {
+  if (!name) return '';
+  const lower = name.toLowerCase().replace(/\.exe$/, '');
+  if (APP_NAME_MAP[lower]) return APP_NAME_MAP[lower];
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
 window.ui = (() => {
   const cardList = document.getElementById('card-list');
   const emptyState = document.getElementById('empty-state');
@@ -39,6 +124,17 @@ window.ui = (() => {
     card.className = 'clip-card' + (entry.is_pinned ? ' pinned' : '') + ' entering' + (entry.content_type === 'image' ? ' clip-card-image' : '');
     card.dataset.id = entry.id;
 
+    const nameEl = document.createElement('div');
+    nameEl.className = 'clip-name';
+    nameEl.dataset.id = entry.id;
+    if (entry.name) {
+      nameEl.textContent = entry.name;
+      nameEl.classList.add('has-name');
+    } else {
+      nameEl.textContent = 'Add name…';
+      nameEl.classList.add('no-name');
+    }
+
     if (entry.content_type === 'image') {
       const imgWrap = document.createElement('div');
       imgWrap.className = 'clip-image-wrap';
@@ -52,6 +148,7 @@ window.ui = (() => {
       imgLabel.className = 'clip-image-label';
       imgLabel.textContent = entry.preview || 'Image';
 
+      card.appendChild(nameEl);
       card.appendChild(imgWrap);
       card.appendChild(imgLabel);
 
@@ -64,6 +161,7 @@ window.ui = (() => {
       preview.style.display = 'none';
       card.appendChild(preview);
     } else {
+      card.appendChild(nameEl);
       const preview = document.createElement('div');
       preview.className = 'clip-preview';
       preview.innerHTML = window.search.highlight(
@@ -71,6 +169,13 @@ window.ui = (() => {
         query
       );
       card.appendChild(preview);
+    }
+
+    if (entry.source_app) {
+      const appLabel = document.createElement('div');
+      appLabel.className = 'clip-source-app';
+      appLabel.textContent = formatAppName(entry.source_app);
+      card.appendChild(appLabel);
     }
 
     const footer = document.createElement('div');
@@ -460,5 +565,84 @@ window.ui = (() => {
     if (overlay) overlay.classList.remove('visible');
   }
 
-  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit };
+  function updateFilterBadge() {
+    const badge = document.getElementById('filter-badge');
+    const chip = document.getElementById('filter-chip');
+    const chipLabel = document.getElementById('filter-chip-label');
+    const currentApp = window.search.getAppFilter();
+    if (badge) badge.style.display = currentApp ? '' : 'none';
+    if (chip && chipLabel) {
+      if (currentApp) {
+        chip.style.display = 'flex';
+        chipLabel.textContent = formatAppName(currentApp);
+      } else {
+        chip.style.display = 'none';
+      }
+    }
+  }
+
+  function renderFilterList(appNames) {
+    const list = document.getElementById('filter-app-list');
+    const input = document.getElementById('filter-search-input');
+    if (!list) return;
+
+    const currentApp = window.search.getAppFilter();
+    const query = input ? input.value.trim().toLowerCase() : '';
+
+    let filtered = appNames;
+    if (query) {
+      filtered = appNames.filter(n => formatAppName(n).toLowerCase().includes(query));
+    }
+
+    list.innerHTML = '';
+    if (!filtered || filtered.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'filter-app-empty';
+      empty.textContent = query ? 'No matching apps' : 'No app data yet';
+      list.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach((name) => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-app-btn' + (name === currentApp ? ' active' : '');
+      btn.textContent = formatAppName(name);
+      btn.dataset.app = name;
+      btn.addEventListener('click', () => {
+        if (name === currentApp) {
+          window.search.setAppFilter('');
+        } else {
+          window.search.setAppFilter(name);
+        }
+        closeFilterPanel();
+      });
+      list.appendChild(btn);
+    });
+  }
+
+  function closeFilterPanel() {
+    const panel = document.getElementById('filter-panel');
+    if (panel) panel.classList.remove('open');
+    updateFilterBadge();
+  }
+
+  function showFilterPanel(appNames) {
+    const panel = document.getElementById('filter-panel');
+    const input = document.getElementById('filter-search-input');
+    if (!panel) return;
+
+    _cachedAppNames = appNames;
+    panel.classList.add('open');
+    if (input) input.value = '';
+    renderFilterList(appNames);
+    if (input) setTimeout(() => input.focus(), 100);
+  }
+
+  let _cachedAppNames = [];
+
+  function hideFilterPanel() {
+    closeFilterPanel();
+  }
+
+  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit, showFilterPanel, hideFilterPanel, updateFilterBadge, renderFilterList };
 })();

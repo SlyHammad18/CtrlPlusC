@@ -3,7 +3,12 @@
 
   async function loadEntries(query, filter) {
     try {
-      const entries = await window.api.getEntries(query || null, filter !== 'all' ? filter : null);
+      const app = window.search.getAppFilter();
+      const entries = await window.api.getEntries(
+        query || null,
+        filter !== 'all' ? filter : null,
+        app || null
+      );
       window.ui.renderCards(entries, query || '');
     } catch (err) {
       console.error('Failed to load entries:', err);
@@ -35,6 +40,48 @@
   }
 
   window.search.init(onSearch);
+  const origSetAppFilter = window.search.setAppFilter;
+  window.search.setAppFilter = function(app) {
+    origSetAppFilter(app);
+    window.ui.updateFilterBadge();
+  };
+
+  function startNameEdit(nameEl) {
+    if (nameEl.querySelector('.clip-name-input')) return;
+    const id = parseInt(nameEl.dataset.id);
+    const current = nameEl.textContent === 'Add name…' ? '' : nameEl.textContent;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'clip-name-input';
+    input.value = current;
+    input.placeholder = 'Add name…';
+    nameEl.textContent = '';
+    nameEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    function finish(save) {
+      const val = input.value.trim();
+      if (save && val) {
+        window.api.setEntryName(id, val).then(() => {
+          nameEl.textContent = val;
+          nameEl.className = 'clip-name has-name';
+        }).catch(() => {
+          nameEl.textContent = current || 'Add name…';
+          nameEl.className = 'clip-name' + (current ? ' has-name' : ' no-name');
+        });
+      } else {
+        nameEl.textContent = current || 'Add name…';
+        nameEl.className = 'clip-name' + (current ? ' has-name' : ' no-name');
+      }
+    }
+
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+      if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
 
   document.getElementById('btn-refresh')?.addEventListener('click', () => {
     loadEntries(window.search.getQuery(), window.search.getFilter());
@@ -72,6 +119,12 @@
 
   const cardList = document.getElementById('card-list');
   cardList.addEventListener('click', async (e) => {
+    const nameEl = e.target.closest('.clip-name');
+    if (nameEl && !e.target.closest('.clip-name-input')) {
+      startNameEdit(nameEl);
+      return;
+    }
+
     const card = e.target.closest('.clip-card');
     if (!card) return;
 
@@ -210,6 +263,48 @@
       monitoring = !monitoring;
       console.error('Toggle monitoring failed:', err);
     }
+  });
+
+  document.getElementById('btn-filter')?.addEventListener('click', async () => {
+    const panel = document.getElementById('filter-panel');
+    if (panel?.classList.contains('open')) {
+      window.ui.hideFilterPanel();
+      return;
+    }
+    try {
+      const names = await window.api.getAppNames();
+      window.ui.showFilterPanel(names);
+    } catch (err) {
+      console.error('Failed to load app names:', err);
+    }
+  });
+
+  document.getElementById('btn-filter-close')?.addEventListener('click', () => {
+    window.ui.hideFilterPanel();
+  });
+
+  document.getElementById('filter-search-input')?.addEventListener('input', () => {
+    window.ui.renderFilterList(_lastAppNames);
+  });
+
+  document.getElementById('filter-search-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') window.ui.hideFilterPanel();
+  });
+
+  let _lastAppNames = [];
+  const _origShowFilter = window.ui.showFilterPanel;
+  window.ui.showFilterPanel = function(names) {
+    _lastAppNames = names;
+    _origShowFilter(names);
+  };
+
+  document.getElementById('btn-filter-clear')?.addEventListener('click', () => {
+    window.search.setAppFilter('');
+    window.ui.hideFilterPanel();
+  });
+
+  document.getElementById('btn-filter-chip-close')?.addEventListener('click', () => {
+    window.search.setAppFilter('');
   });
 
   document.getElementById('btn-lock')?.addEventListener('click', handleLockAction);

@@ -2,6 +2,7 @@ window.search = (() => {
   let debounceTimer = null;
   let currentQuery = '';
   let currentFilter = 'all';
+  let currentApp = '';
   let onSearchCallback = null;
 
   const input = document.getElementById('search-input');
@@ -36,6 +37,15 @@ window.search = (() => {
     return currentFilter;
   }
 
+  function getAppFilter() {
+    return currentApp;
+  }
+
+  function setAppFilter(app) {
+    currentApp = app;
+    if (onSearchCallback) onSearchCallback(currentQuery, currentFilter);
+  }
+
   function highlight(text, query) {
     if (!query) return text;
     const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -43,5 +53,5 @@ window.search = (() => {
     return text.replace(regex, '<span class="highlight">$1</span>');
   }
 
-  return { init, getQuery, getFilter, highlight };
+  return { init, getQuery, getFilter, getAppFilter, setAppFilter, highlight };
 })();

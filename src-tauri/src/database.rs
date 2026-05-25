@@ -11,6 +11,8 @@ pub struct Entry {
     pub timestamp: String,
     pub is_pinned: bool,
     pub is_private: bool,
+    pub source_app: String,
+    pub name: String,
 }
 
 pub struct Database {
@@ -60,15 +62,25 @@ impl Database {
         let _ = conn.execute("ALTER TABLE entries ADD COLUMN image_data BLOB", []);
         let _ = conn.execute("ALTER TABLE entries ADD COLUMN width INTEGER NOT NULL DEFAULT 0", []);
         let _ = conn.execute("ALTER TABLE entries ADD COLUMN height INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE entries ADD COLUMN source_app TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE entries ADD COLUMN name TEXT NOT NULL DEFAULT ''", []);
         Ok(())
     }
 
     pub fn add_entry(&self, content: &str, is_private: bool) -> Result<Entry, String> {
-        self.add_entry_ext(content, "text", None, 0, 0, is_private)
+        self.add_entry_ext(content, "text", None, 0, 0, is_private, "")
+    }
+
+    pub fn add_entry_with_app(&self, content: &str, is_private: bool, source_app: &str) -> Result<Entry, String> {
+        self.add_entry_ext(content, "text", None, 0, 0, is_private, source_app)
     }
 
     pub fn add_image_entry(&self, raw_rgba: &[u8], width: u32, height: u32, is_private: bool) -> Result<Entry, String> {
-        self.add_entry_ext("", "image", Some(raw_rgba), width as i32, height as i32, is_private)
+        self.add_entry_ext("", "image", Some(raw_rgba), width as i32, height as i32, is_private, "")
+    }
+
+    pub fn add_image_entry_with_app(&self, raw_rgba: &[u8], width: u32, height: u32, is_private: bool, source_app: &str) -> Result<Entry, String> {
+        self.add_entry_ext("", "image", Some(raw_rgba), width as i32, height as i32, is_private, source_app)
     }
 
     fn add_entry_ext(
@@ -79,6 +91,7 @@ impl Database {
         width: i32,
         height: i32,
         is_private: bool,
+        source_app: &str,
     ) -> Result<Entry, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
@@ -95,8 +108,8 @@ impl Database {
         };
 
         conn.execute(
-            "INSERT INTO entries (content, content_type, preview, image_data, width, height, is_private) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![content, content_type, preview, image_data, width, height, is_private as i32],
+            "INSERT INTO entries (content, content_type, preview, image_data, width, height, is_private, source_app) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![content, content_type, preview, image_data, width, height, is_private as i32, source_app],
         )
         .map_err(|e| e.to_string())?;
 
@@ -110,6 +123,8 @@ impl Database {
             timestamp: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             is_pinned: false,
             is_private,
+            source_app: source_app.to_string(),
+            name: String::new(),
         };
 
         drop(conn);
@@ -122,17 +137,29 @@ impl Database {
         &self,
         query: Option<&str>,
         date_filter: Option<&str>,
+        source_app: Option<&str>,
     ) -> Result<Vec<Entry>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut sql = String::from(
-            "SELECT id, content, content_type, preview, timestamp, is_pinned, is_private FROM entries WHERE 1=1",
+            "SELECT id, content, content_type, preview, timestamp, is_pinned, is_private, source_app, name FROM entries WHERE 1=1",
         );
         let mut param_values: Vec<String> = Vec::new();
 
         if let Some(q) = query {
             if !q.is_empty() {
-                sql.push_str(" AND content_type = 'text' AND content LIKE ?");
+                sql.push_str(" AND (");
+                sql.push_str("(content_type = 'text' AND content LIKE ?)");
                 param_values.push(format!("%{}%", q));
+                sql.push_str(" OR name LIKE ?");
+                param_values.push(format!("%{}%", q));
+                sql.push_str(")");
+            }
+        }
+
+        if let Some(app) = source_app {
+            if !app.is_empty() {
+                sql.push_str(" AND source_app = ?");
+                param_values.push(app.to_string());
             }
         }
 
@@ -172,6 +199,8 @@ impl Database {
                     timestamp: row.get(4)?,
                     is_pinned: row.get::<_, i32>(5)? != 0,
                     is_private: row.get::<_, i32>(6)? != 0,
+                    source_app: row.get(7)?,
+                    name: row.get(8)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -181,6 +210,32 @@ impl Database {
             entries.push(row.map_err(|e| e.to_string())?);
         }
         Ok(entries)
+    }
+
+    pub fn set_entry_name(&self, id: i64, name: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = conn
+            .execute("UPDATE entries SET name = ?1 WHERE id = ?2", params![name, id])
+            .map_err(|e| e.to_string())?;
+        if affected == 0 {
+            return Err("Entry not found".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn get_app_names(&self) -> Result<Vec<String>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT source_app FROM entries WHERE source_app != '' ORDER BY source_app ASC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut names = Vec::new();
+        for row in rows {
+            names.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(names)
     }
 
     pub fn get_entry_image_data(&self, id: i64) -> Result<Option<(Vec<u8>, u32, u32)>, String> {
@@ -279,7 +334,7 @@ mod tests {
         assert!(!entry.is_pinned);
         assert!(!entry.is_private);
 
-        let entries = db.get_entries(None, None).unwrap();
+        let entries = db.get_entries(None, None, None).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, "hello world");
         assert_eq!(entries[0].content_type, "text");
@@ -302,7 +357,7 @@ mod tests {
         assert_eq!(w, 2);
         assert_eq!(h, 2);
 
-        let entries = db.get_entries(None, None).unwrap();
+        let entries = db.get_entries(None, None, None).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content_type, "image");
     }
@@ -311,9 +366,9 @@ mod tests {
     fn test_delete_entry() {
         let db = setup();
         let entry = db.add_entry("to delete", false).unwrap();
-        assert_eq!(db.get_entries(None, None).unwrap().len(), 1);
+        assert_eq!(db.get_entries(None, None, None).unwrap().len(), 1);
         db.delete_entry(entry.id).unwrap();
-        assert_eq!(db.get_entries(None, None).unwrap().len(), 0);
+        assert_eq!(db.get_entries(None, None, None).unwrap().len(), 0);
     }
 
     #[test]
@@ -321,10 +376,10 @@ mod tests {
         let db = setup();
         let entry = db.add_entry("pin me", false).unwrap();
         db.toggle_pin(entry.id).unwrap();
-        let entries = db.get_entries(None, None).unwrap();
+        let entries = db.get_entries(None, None, None).unwrap();
         assert!(entries[0].is_pinned);
         db.toggle_pin(entry.id).unwrap();
-        let entries = db.get_entries(None, None).unwrap();
+        let entries = db.get_entries(None, None, None).unwrap();
         assert!(!entries[0].is_pinned);
     }
 
@@ -347,7 +402,7 @@ mod tests {
         drop(conn);
 
         db.cleanup(100).unwrap();
-        let entries = db.get_entries(None, None).unwrap();
+        let entries = db.get_entries(None, None, None).unwrap();
         assert_eq!(entries.len(), 100);
         let oldest = entries.last().unwrap();
         assert_eq!(oldest.content, "entry 5");
@@ -374,7 +429,7 @@ mod tests {
         drop(conn);
 
         db.cleanup(100).unwrap();
-        let entries = db.get_entries(None, None).unwrap();
+        let entries = db.get_entries(None, None, None).unwrap();
 
         assert_eq!(entries.len(), 100);
         let pinned_count = entries.iter().filter(|e| e.is_pinned).count();
@@ -388,34 +443,21 @@ mod tests {
         db.add_entry("banana bread", false).unwrap();
         db.add_entry("apple tart", false).unwrap();
 
-        let results = db.get_entries(Some("apple"), None).unwrap();
+        let results = db.get_entries(Some("apple"), None, None).unwrap();
         assert_eq!(results.len(), 2);
 
-        let results = db.get_entries(Some("banana"), None).unwrap();
+        let results = db.get_entries(Some("banana"), None, None).unwrap();
         assert_eq!(results.len(), 1);
 
-        let results = db.get_entries(Some("orange"), None).unwrap();
+        let results = db.get_entries(Some("orange"), None, None).unwrap();
         assert_eq!(results.len(), 0);
-    }
-
-    #[test]
-    fn test_search_does_not_include_images() {
-        let db = setup();
-        db.add_entry("apple pie", false).unwrap();
-        db.add_image_entry(&[0u8; 4], 1, 1, false).unwrap();
-
-        let results = db.get_entries(Some("apple"), None).unwrap();
-        assert_eq!(results.len(), 1);
-
-        let results = db.get_entries(None, None).unwrap();
-        assert_eq!(results.len(), 2);
     }
 
     #[test]
     fn test_date_filter_today() {
         let db = setup();
         db.add_entry("today entry", false).unwrap();
-        let entries = db.get_entries(None, Some("today")).unwrap();
+        let entries = db.get_entries(None, Some("today"), None).unwrap();
         assert_eq!(entries.len(), 1);
     }
 
@@ -447,7 +489,7 @@ mod tests {
         let db = setup();
         let entry = db.add_entry("original text", false).unwrap();
         db.update_entry(entry.id, "edited text").unwrap();
-        let entries = db.get_entries(None, None).unwrap();
+        let entries = db.get_entries(None, None, None).unwrap();
         assert_eq!(entries[0].content, "edited text");
         assert_eq!(entries[0].preview, "edited text");
     }

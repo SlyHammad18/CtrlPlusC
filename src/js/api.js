@@ -23,8 +23,11 @@ window.api = (() => {
     addEntry: (content, isPrivate = false) =>
       invoke('add_entry', { content, isPrivate }),
 
-    getEntries: (query = null, dateFilter = null) =>
-      invoke('get_entries', { query, dateFilter }),
+    getEntries: (query = null, dateFilter = null, sourceApp = null) =>
+      invoke('get_entries', { query, dateFilter, sourceApp }),
+
+    getAppNames: () =>
+      invoke('get_app_names'),
 
     deleteEntry: (id) =>
       invoke('delete_entry', { id }),
@@ -85,5 +88,8 @@ window.api = (() => {
 
     updateEntry: (id, content) =>
       invoke('update_entry', { id, content }),
+
+    setEntryName: (id, name) =>
+      invoke('set_entry_name', { id, name }),
   };
 })();
