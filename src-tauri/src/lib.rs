@@ -5,10 +5,11 @@ mod database;
 mod hotkey;
 mod private_mode;
 
-use clipboard::ClipboardMonitor;
+use clipboard::{hash_bytes, ClipboardMonitor};
 use config::Config;
 use database::{Database, Entry};
 use std::fs;
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -52,7 +53,6 @@ fn start_socket_listener() {
 
     std::thread::spawn(move || {
         let path = get_socket_path();
-        // Remove stale socket file
         let _ = fs::remove_file(&path);
         let listener = match UnixListener::bind(&path) {
             Ok(l) => l,
@@ -127,7 +127,6 @@ fn delete_entry(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> 
 #[tauri::command]
 fn clear_all(state: State<'_, Arc<Database>>, monitor: State<'_, ClipboardMonitor>) -> Result<(), String> {
     state.clear_all()?;
-    // Sync last_content to current clipboard so the next poll doesn't re-add it
     if let Ok(mut clip) = arboard::Clipboard::new() {
         if let Ok(t) = clip.get_text() {
             if !t.trim().is_empty() {
@@ -136,6 +135,9 @@ fn clear_all(state: State<'_, Arc<Database>>, monitor: State<'_, ClipboardMonito
                 }
             }
         }
+    }
+    if let Ok(mut last) = monitor.last_image_hash.lock() {
+        *last = None;
     }
     Ok(())
 }
@@ -188,6 +190,9 @@ fn set_private_mode_password(
     if let Ok(mut last) = monitor.last_content.lock() {
         *last = None;
     }
+    if let Ok(mut last) = monitor.last_image_hash.lock() {
+        *last = None;
+    }
     Ok(())
 }
 
@@ -204,6 +209,9 @@ fn lock_private_mode(
     config::save_config(&cfg)?;
     monitor.private_mode.store(true, Ordering::Relaxed);
     if let Ok(mut last) = monitor.last_content.lock() {
+        *last = None;
+    }
+    if let Ok(mut last) = monitor.last_image_hash.lock() {
         *last = None;
     }
     Ok(())
@@ -284,6 +292,73 @@ fn copy_and_paste(text: String, monitor: State<'_, ClipboardMonitor>, window: ta
     Ok(())
 }
 
+fn rgba_to_png_thumbnail(raw_rgba: &[u8], w: u32, h: u32, max_w: u32, max_h: u32) -> Result<Vec<u8>, String> {
+    let img = image::RgbaImage::from_raw(w, h, raw_rgba.to_vec())
+        .ok_or_else(|| "Failed to create image from RGBA data".to_string())?;
+    let (new_w, new_h) = if w > max_w || h > max_h {
+        let ratio = ((w as f64 / max_w as f64).max(h as f64 / max_h as f64)).ceil() as u32;
+        if ratio == 0 { (w, h) } else { (w / ratio, h / ratio) }
+    } else {
+        (w, h)
+    };
+    let dyn_img = image::DynamicImage::from(img);
+    let thumb = dyn_img.thumbnail(new_w, new_h);
+    let mut buf = Cursor::new(Vec::new());
+    thumb.write_to(&mut buf, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+    Ok(buf.into_inner())
+}
+
+fn base64_data_uri(bytes: &[u8]) -> String {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    format!("data:image/png;base64,{}", b64)
+}
+
+#[tauri::command]
+fn get_entry_image(db: State<'_, Arc<Database>>, id: i64) -> Result<Option<String>, String> {
+    let data = db.get_entry_image_data(id)?;
+    match data {
+        Some((raw_rgba, w, h)) => {
+            let thumb = rgba_to_png_thumbnail(&raw_rgba, w, h, 300, 200)?;
+            Ok(Some(base64_data_uri(&thumb)))
+        }
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+fn copy_image_and_paste(
+    db: State<'_, Arc<Database>>,
+    monitor: State<'_, ClipboardMonitor>,
+    window: tauri::Window,
+    id: i64,
+) -> Result<(), String> {
+    let data = db.get_entry_image_data(id)?.ok_or("Image not found")?;
+    let (raw_rgba, w, h) = data;
+
+    // Validate buffer size before passing to arboard
+    let expected_len = (w as usize) * (h as usize) * 4;
+    if raw_rgba.len() != expected_len || w == 0 || h == 0 {
+        return Err(format!("Invalid image data: {}x{} buffer {} (expected {})", w, h, raw_rgba.len(), expected_len));
+    }
+
+    let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    let img_data = arboard::ImageData {
+        width: w as usize,
+        height: h as usize,
+        bytes: std::borrow::Cow::Owned(raw_rgba),
+    };
+    clip.set_image(img_data).map_err(|e| e.to_string())?;
+    drop(clip);
+    if let Ok(mut last) = monitor.last_app_copy.lock() {
+        *last = Some("__image__".to_string());
+    }
+    let _ = window.hide();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    simulate_paste();
+    Ok(())
+}
+
 #[tauri::command]
 fn register_hotkey(
     app_handle: tauri::AppHandle,
@@ -310,8 +385,6 @@ fn copy_to_clipboard(text: String, monitor: State<'_, ClipboardMonitor>) -> Resu
 #[tauri::command]
 fn set_monitoring(monitor: State<'_, ClipboardMonitor>, active: bool) -> Result<(), String> {
     let was_paused = monitor.paused.swap(!active, Ordering::Relaxed);
-    // When resuming, sync last_content to current clipboard so items
-    // copied while paused are not retroactively added
     if active && was_paused {
         if let Ok(mut clip) = arboard::Clipboard::new() {
             if let Ok(t) = clip.get_text() {
@@ -335,40 +408,85 @@ fn check_clipboard(
         return Ok(None);
     }
 
-    let text = match arboard::Clipboard::new() {
-        Ok(mut clip) => match clip.get_text() {
-            Ok(t) => t,
-            Err(_) => return Ok(None),
-        },
+    let mut clip = match arboard::Clipboard::new() {
+        Ok(c) => c,
         Err(_) => return Ok(None),
     };
 
-    if text.trim().is_empty() {
-        return Ok(None);
+    // Check for text first (fast path, stays on main thread)
+    if let Ok(text) = clip.get_text() {
+        if !text.trim().is_empty() {
+            {
+                let mut last = monitor.last_content.lock().map_err(|e| e.to_string())?;
+                if last.as_ref() == Some(&text) {
+                    return Ok(None);
+                }
+                *last = Some(text.clone());
+            }
+            {
+                let mut app = monitor.last_app_copy.lock().map_err(|e| e.to_string())?;
+                if app.as_ref() == Some(&text) {
+                    *app = None;
+                    return Ok(None);
+                }
+            }
+            match db.add_entry(&text, false) {
+                Ok(entry) => return Ok(Some(entry)),
+                Err(ref e) if e == "duplicate entry" => return Ok(None),
+                Err(e) => return Err(e),
+            }
+        }
     }
 
-    {
-        let mut last = monitor.last_content.lock().map_err(|e| e.to_string())?;
-        if last.as_ref() == Some(&text) {
+    // Check for image
+    if let Ok(img) = clip.get_image() {
+        let w = img.width as u32;
+        let h = img.height as u32;
+
+        // Skip images larger than 4K to avoid memory/performance issues
+        if w > 3840 || h > 2160 {
             return Ok(None);
         }
-        *last = Some(text.clone());
-    }
 
-    // If this text was just copied from within the app, don't re-add it
-    {
-        let mut app = monitor.last_app_copy.lock().map_err(|e| e.to_string())?;
-        if app.as_ref() == Some(&text) {
-            *app = None;
+        // Skip zero-size images
+        if w == 0 || h == 0 {
             return Ok(None);
+        }
+
+        let raw_bytes = img.bytes.to_vec();
+
+        // Validate buffer size before hashing/storing
+        let expected_len = (w as usize) * (h as usize) * 4;
+        if raw_bytes.len() != expected_len {
+            return Err(format!("Clipboard image has unexpected buffer size: {} (expected {} for {}x{})", raw_bytes.len(), expected_len, w, h));
+        }
+
+        let hash = hash_bytes(&raw_bytes);
+
+        {
+            let mut last = monitor.last_image_hash.lock().map_err(|e| e.to_string())?;
+            if last.as_ref() == Some(&hash) {
+                return Ok(None);
+            }
+            *last = Some(hash);
+        }
+        {
+            let mut app = monitor.last_app_copy.lock().map_err(|e| e.to_string())?;
+            if app.as_deref() == Some("__image__") {
+                *app = None;
+                return Ok(None);
+            }
+        }
+
+        // Store raw RGBA directly — no PNG encoding in the polling path
+        match db.add_image_entry(&raw_bytes, w, h, false) {
+            Ok(entry) => return Ok(Some(entry)),
+            Err(ref e) if e == "duplicate entry" => return Ok(None),
+            Err(e) => return Err(e),
         }
     }
 
-    match db.add_entry(&text, false) {
-        Ok(entry) => Ok(Some(entry)),
-        Err(ref e) if e == "duplicate entry" => Ok(None),
-        Err(e) => Err(e),
-    }
+    Ok(None)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -485,6 +603,9 @@ pub fn run() {
                             if let Ok(mut last) = monitor.last_content.lock() {
                                 *last = None;
                             }
+                            if let Ok(mut last) = monitor.last_image_hash.lock() {
+                                *last = None;
+                            }
                             let config: State<'_, Mutex<Config>> = app.state();
                             if let Ok(mut cfg) = config.lock() {
                                 cfg.private_mode_locked = true;
@@ -550,6 +671,8 @@ pub fn run() {
             is_autostart_enabled,
             copy_and_paste,
             copy_to_clipboard,
+            copy_image_and_paste,
+            get_entry_image,
             check_clipboard,
             set_monitoring,
             register_hotkey,

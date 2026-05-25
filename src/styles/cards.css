@@ -237,3 +237,35 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+.clip-card-image {
+  cursor: pointer;
+}
+
+.clip-image-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  overflow: hidden;
+  min-height: 60px;
+  max-height: 180px;
+}
+
+.clip-image-thumb {
+  max-width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  display: block;
+}
+
+.clip-image-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: -4px;
+}

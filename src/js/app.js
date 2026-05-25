@@ -15,7 +15,11 @@
     try {
       const entries = await window.api.getEntries(null, null);
       const entry = entries.find((e) => e.id === id);
-      if (entry) {
+      if (!entry) return;
+      if (entry.content_type === 'image') {
+        await window.api.copyImageAndPaste(id);
+        window.ui.showToast('Image copied to clipboard');
+      } else {
         await window.api.copyAndPaste(entry.content);
         window.ui.showToast('Copied to clipboard');
       }

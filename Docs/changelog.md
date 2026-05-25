@@ -704,6 +704,62 @@
 
 ---
 
+## [Unplanned] — Image Clipboard Support (v3, raw RGBA storage) — 2026-05-25
+
+### 🔴 Issue (v2 crash fix)
+- Previous v2 approach stored PNG in DB and used `image` crate for encoding/decoding
+- `copy_image_and_paste` crashed with `STATUS_ACCESS_VIOLATION (0xc0000005)` when calling `arboard::set_image()` after PNG→RGBA decode
+- Root cause: `image` crate's internal FFI calls (libpng/zlib) caused a C-level memory crash during decode/encode
+
+### ✅ What Changed (v3 Fix)
+- **`Cargo.toml`** — Added `base64` (0.22) and `image` (0.25) crates
+- **`src-tauri/src/database.rs`** — Major schema rework:
+  - **Stores raw RGBA bytes** instead of PNG (`image_data` BLOB)
+  - Added `width` and `height` columns (INTEGER)
+  - `add_image_entry()` now takes `(raw_rgba, width, height, is_private)`
+  - `get_entry_image_data()` returns `Option<(Vec<u8>, u32, u32)>` — raw RGBA + dimensions
+  - Preview shows dimensions: `"Image 1920x1080"`
+  - Migration adds `width`/`height` columns with `ALTER TABLE`
+  - 27 tests all passing
+  - New columns: `content_type TEXT NOT NULL DEFAULT 'text'`, `image_data BLOB`
+  - New `Entry` field: `content_type` ('text' or 'image')
+  - `add_image_entry()` — stores PNG bytes in DB with content_type='image'
+  - `get_entry_image_data()` — retrieves raw PNG bytes for a given entry ID
+  - Search queries now filter by `content_type = 'text'` (images excluded from text search)
+  - Migration: `ALTER TABLE` with error handling for existing databases
+  - 4 new tests (add image, image preview, search excludes images, nonexistent image)
+- **`src-tauri/src/clipboard.rs`** — Added `last_image_hash: Arc<Mutex<Option<u64>>>` to `ClipboardMonitor` for image dedup; added `hash_bytes()` helper using `DefaultHasher`
+- **`src-tauri/src/lib.rs`** — Image handling rewritten to avoid `image` crate crashes:
+  - **`check_clipboard`** (sync, no async needed) — detects images via `clip.get_image()`, validates buffer size, hashes raw RGBA for dedup, stores raw RGBA + dimensions directly in DB. **No `image` crate calls in this path** — zero CPU overhead for polling.
+  - **`get_entry_image`** — reads raw RGBA from DB, converts to PNG thumbnail (300×200 max) using `image` crate, returns base64 data URI. `image` crate used only here (on-demand, once per card render).
+  - **`copy_image_and_paste`** — reads raw RGBA from DB, validates buffer size matches `w * h * 4`, passes directly to `arboard::set_image()`. **No `image` crate calls** — eliminates the crash risk entirely.
+  - `clear_all`, `lock_private_mode`, `set_private_mode_password` all reset `last_image_hash` state
+- **`src/js/api.js`** — Added `getEntryImage(id)` and `copyImageAndPaste(id)` wrappers
+- **`src/js/ui.js`** — `createCard()` renders image cards with async thumbnail loading, label shows dimensions from preview
+- **`src/styles/cards.css`** — Added image card styles: `.clip-image-wrap`, `.clip-image-thumb`, `.clip-image-label`
+- **`src/js/app.js`** — `copyById()` detects image entries and calls `copyImageAndPaste` instead of text copy
+
+### ⏭️ What Was Not Changed
+- Config, hotkey, autostart, private_mode modules unchanged
+- Theme editor, settings panel, lock screen unchanged
+
+### ❌ Errors Faced
+- `STATUS_ACCESS_VIOLATION (0xc0000005)` in `copy_image_and_paste` — caused by `image` crate's FFI (libpng/zlib) when decoding PNG→RGBA for `arboard::set_image()`. Fixed by storing raw RGBA directly and skipping the PNG decode in the paste path.
+- Type mismatch: `Some("__image__")` vs `Option<&String>` — fixed with `as_deref()`
+- `query_row` errors on no rows — fixed with manual `stmt.query() + rows.next()`
+
+### 📝 Notes
+- Images stored as **raw RGBA bytes** in SQLite BLOB (not PNG), with separate width/height columns
+- `image` crate only used in `get_entry_image` (thumbnail generation) — isolated from all polling and copy paths
+- Thumbnails (max 300×200) generated on-the-fly for frontend display
+- Duplicate detection uses `DefaultHasher` hash of the raw RGBA bytes
+- When copied from the app, image is marked with `last_app_copy = "__image__"` to prevent re-adding
+- Search excludes image entries (only text entries are searchable)
+- Size limit: images larger than 3840×2160 are silently skipped
+- Buffer size validated before hashing and before `arboard::set_image()` (must equal `w * h * 4`)
+
+---
+
 ## [Unplanned] — Custom Font Setting — 2026-05-25
 
 ### ✅ What Changed

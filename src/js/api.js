@@ -76,5 +76,11 @@ window.api = (() => {
 
     setMonitoring: (active) =>
       invoke('set_monitoring', { active }),
+
+    getEntryImage: (id) =>
+      invoke('get_entry_image', { id }),
+
+    copyImageAndPaste: (id) =>
+      invoke('copy_image_and_paste', { id }),
   };
 })();

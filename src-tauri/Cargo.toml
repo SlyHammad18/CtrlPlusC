@@ -25,6 +25,8 @@ aes-gcm = "0.10"
 arboard = { version = "3", features = ["wayland-data-control"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }

@@ -6,6 +6,7 @@ use std::sync::Mutex;
 pub struct Entry {
     pub id: i64,
     pub content: String,
+    pub content_type: String,
     pub preview: String,
     pub timestamp: String,
     pub is_pinned: bool,
@@ -41,8 +42,12 @@ impl Database {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS entries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                content     TEXT NOT NULL,
-                preview     TEXT NOT NULL,
+                content     TEXT NOT NULL DEFAULT '',
+                content_type TEXT NOT NULL DEFAULT 'text',
+                preview     TEXT NOT NULL DEFAULT '',
+                image_data  BLOB,
+                width       INTEGER NOT NULL DEFAULT 0,
+                height      INTEGER NOT NULL DEFAULT 0,
                 timestamp   TEXT NOT NULL DEFAULT (datetime('now')),
                 is_pinned   INTEGER NOT NULL DEFAULT 0,
                 is_private  INTEGER NOT NULL DEFAULT 0
@@ -51,33 +56,47 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_pinned ON entries(is_pinned);",
         )
         .map_err(|e| e.to_string())?;
+        let _ = conn.execute("ALTER TABLE entries ADD COLUMN content_type TEXT NOT NULL DEFAULT 'text'", []);
+        let _ = conn.execute("ALTER TABLE entries ADD COLUMN image_data BLOB", []);
+        let _ = conn.execute("ALTER TABLE entries ADD COLUMN width INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE entries ADD COLUMN height INTEGER NOT NULL DEFAULT 0", []);
         Ok(())
     }
 
     pub fn add_entry(&self, content: &str, is_private: bool) -> Result<Entry, String> {
+        self.add_entry_ext(content, "text", None, 0, 0, is_private)
+    }
+
+    pub fn add_image_entry(&self, raw_rgba: &[u8], width: u32, height: u32, is_private: bool) -> Result<Entry, String> {
+        self.add_entry_ext("", "image", Some(raw_rgba), width as i32, height as i32, is_private)
+    }
+
+    fn add_entry_ext(
+        &self,
+        content: &str,
+        content_type: &str,
+        image_data: Option<&[u8]>,
+        width: i32,
+        height: i32,
+        is_private: bool,
+    ) -> Result<Entry, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
-        // Skip duplicate of most recent entry
-        let last: Result<String, _> = conn.query_row(
-            "SELECT content FROM entries ORDER BY timestamp DESC LIMIT 1",
-            [],
-            |row| row.get(0),
-        );
-        if let Ok(last_content) = last {
-            if last_content == content {
-                return Err("duplicate entry".to_string());
+        let preview = if content_type == "image" {
+            if width > 0 && height > 0 {
+                format!("Image {}x{}", width, height)
+            } else {
+                "Image".to_string()
             }
-        }
-
-        let preview = if content.len() > 100 {
+        } else if content.len() > 100 {
             format!("{}...", &content[..100])
         } else {
             content.to_string()
         };
 
         conn.execute(
-            "INSERT INTO entries (content, preview, is_private) VALUES (?1, ?2, ?3)",
-            params![content, preview, is_private as i32],
+            "INSERT INTO entries (content, content_type, preview, image_data, width, height, is_private) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![content, content_type, preview, image_data, width, height, is_private as i32],
         )
         .map_err(|e| e.to_string())?;
 
@@ -86,6 +105,7 @@ impl Database {
         let entry = Entry {
             id,
             content: content.to_string(),
+            content_type: content_type.to_string(),
             preview,
             timestamp: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             is_pinned: false,
@@ -105,13 +125,13 @@ impl Database {
     ) -> Result<Vec<Entry>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut sql = String::from(
-            "SELECT id, content, preview, timestamp, is_pinned, is_private FROM entries WHERE 1=1",
+            "SELECT id, content, content_type, preview, timestamp, is_pinned, is_private FROM entries WHERE 1=1",
         );
         let mut param_values: Vec<String> = Vec::new();
 
         if let Some(q) = query {
             if !q.is_empty() {
-                sql.push_str(" AND content LIKE ?");
+                sql.push_str(" AND content_type = 'text' AND content LIKE ?");
                 param_values.push(format!("%{}%", q));
             }
         }
@@ -147,10 +167,11 @@ impl Database {
                 Ok(Entry {
                     id: row.get(0)?,
                     content: row.get(1)?,
-                    preview: row.get(2)?,
-                    timestamp: row.get(3)?,
-                    is_pinned: row.get::<_, i32>(4)? != 0,
-                    is_private: row.get::<_, i32>(5)? != 0,
+                    content_type: row.get(2)?,
+                    preview: row.get(3)?,
+                    timestamp: row.get(4)?,
+                    is_pinned: row.get::<_, i32>(5)? != 0,
+                    is_private: row.get::<_, i32>(6)? != 0,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -160,6 +181,26 @@ impl Database {
             entries.push(row.map_err(|e| e.to_string())?);
         }
         Ok(entries)
+    }
+
+    pub fn get_entry_image_data(&self, id: i64) -> Result<Option<(Vec<u8>, u32, u32)>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT image_data, width, height FROM entries WHERE id = ?1 AND content_type = 'image'")
+            .map_err(|e| e.to_string())?;
+        let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
+        match rows.next().map_err(|e| e.to_string())? {
+            Some(row) => {
+                let data: Option<Vec<u8>> = row.get(0).map_err(|e| e.to_string())?;
+                let w: i32 = row.get(1).map_err(|e| e.to_string())?;
+                let h: i32 = row.get(2).map_err(|e| e.to_string())?;
+                match data {
+                    Some(bytes) => Ok(Some((bytes, w as u32, h as u32))),
+                    None => Ok(None),
+                }
+            }
+            None => Ok(None),
+        }
     }
 
     pub fn delete_entry(&self, id: i64) -> Result<(), String> {
@@ -214,6 +255,7 @@ mod tests {
         let db = setup();
         let entry = db.add_entry("hello world", false).unwrap();
         assert_eq!(entry.content, "hello world");
+        assert_eq!(entry.content_type, "text");
         assert_eq!(entry.preview, "hello world");
         assert!(!entry.is_pinned);
         assert!(!entry.is_private);
@@ -221,15 +263,29 @@ mod tests {
         let entries = db.get_entries(None, None).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, "hello world");
+        assert_eq!(entries[0].content_type, "text");
     }
 
     #[test]
-    fn test_duplicate_detection() {
+    fn test_add_image_entry() {
         let db = setup();
-        db.add_entry("same text", false).unwrap();
-        let result = db.add_entry("same text", false);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "duplicate entry");
+        let rgba = vec![0u8; 16]; // 2x2 RGBA image
+        let entry = db.add_image_entry(&rgba, 2, 2, false).unwrap();
+        assert_eq!(entry.content_type, "image");
+        assert!(entry.preview.contains("Image"));
+        assert!(entry.preview.contains("2x2"));
+        assert!(!entry.is_pinned);
+
+        let stored = db.get_entry_image_data(entry.id).unwrap();
+        assert!(stored.is_some());
+        let (data, w, h) = stored.unwrap();
+        assert_eq!(data, rgba);
+        assert_eq!(w, 2);
+        assert_eq!(h, 2);
+
+        let entries = db.get_entries(None, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].content_type, "image");
     }
 
     #[test]
@@ -256,14 +312,11 @@ mod tests {
     #[test]
     fn test_fifo_cleanup() {
         let db = Database::new_in_memory().unwrap();
-        // Overwrite max_entries by calling cleanup directly
-        // We use the cleanup method directly after inserting
         let conn = db.conn.lock().unwrap();
 
-        // Insert 105 unpinned entries directly
         for i in 0..105 {
             conn.execute(
-                "INSERT INTO entries (content, preview, timestamp) VALUES (?1, ?2, datetime('now', ?3))",
+                "INSERT INTO entries (content, content_type, preview, timestamp) VALUES (?1, 'text', ?2, datetime('now', ?3))",
                 params![
                     format!("entry {}", i),
                     format!("entry {}", i),
@@ -277,9 +330,6 @@ mod tests {
         db.cleanup(100).unwrap();
         let entries = db.get_entries(None, None).unwrap();
         assert_eq!(entries.len(), 100);
-        // Oldest 5 should be gone, entry "5" should be the oldest remaining
-        // Actually the 5 oldest (0-4) should be deleted
-        // entry 5 has timestamp -100 minutes, which is newer than entries 0-4
         let oldest = entries.last().unwrap();
         assert_eq!(oldest.content, "entry 5");
     }
@@ -289,11 +339,10 @@ mod tests {
         let db = Database::new_in_memory().unwrap();
         let conn = db.conn.lock().unwrap();
 
-        // Insert 110 entries, pin the first 15
         for i in 0..110 {
             let pinned = if i < 15 { 1 } else { 0 };
             conn.execute(
-                "INSERT INTO entries (content, preview, timestamp, is_pinned) VALUES (?1, ?2, datetime('now', ?3), ?4)",
+                "INSERT INTO entries (content, content_type, preview, timestamp, is_pinned) VALUES (?1, 'text', ?2, datetime('now', ?3), ?4)",
                 params![
                     format!("entry {}", i),
                     format!("entry {}", i),
@@ -308,7 +357,6 @@ mod tests {
         db.cleanup(100).unwrap();
         let entries = db.get_entries(None, None).unwrap();
 
-        // All 15 pinned should survive, plus 85 unpinned = 100 total
         assert_eq!(entries.len(), 100);
         let pinned_count = entries.iter().filter(|e| e.is_pinned).count();
         assert_eq!(pinned_count, 15);
@@ -332,6 +380,19 @@ mod tests {
     }
 
     #[test]
+    fn test_search_does_not_include_images() {
+        let db = setup();
+        db.add_entry("apple pie", false).unwrap();
+        db.add_image_entry(&[0u8; 4], 1, 1, false).unwrap();
+
+        let results = db.get_entries(Some("apple"), None).unwrap();
+        assert_eq!(results.len(), 1);
+
+        let results = db.get_entries(None, None).unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
     fn test_date_filter_today() {
         let db = setup();
         db.add_entry("today entry", false).unwrap();
@@ -344,7 +405,21 @@ mod tests {
         let db = setup();
         let long = "a".repeat(150);
         let entry = db.add_entry(&long, false).unwrap();
-        assert_eq!(entry.preview.len(), 103); // 100 chars + "..."
+        assert_eq!(entry.preview.len(), 103);
         assert!(entry.preview.ends_with("..."));
+    }
+
+    #[test]
+    fn test_image_entry_preview() {
+        let db = setup();
+        let entry = db.add_image_entry(&[0u8; 16], 4, 4, false).unwrap();
+        assert_eq!(entry.preview, "Image 4x4");
+    }
+
+    #[test]
+    fn test_get_entry_image_nonexistent() {
+        let db = setup();
+        let result = db.get_entry_image_data(999).unwrap();
+        assert!(result.is_none());
     }
 }

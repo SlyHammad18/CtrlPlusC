@@ -36,15 +36,42 @@ window.ui = (() => {
 
   function createCard(entry, query) {
     const card = document.createElement('div');
-    card.className = 'clip-card' + (entry.is_pinned ? ' pinned' : '') + ' entering';
+    card.className = 'clip-card' + (entry.is_pinned ? ' pinned' : '') + ' entering' + (entry.content_type === 'image' ? ' clip-card-image' : '');
     card.dataset.id = entry.id;
 
-    const preview = document.createElement('div');
-    preview.className = 'clip-preview';
-    preview.innerHTML = window.search.highlight(
-      entry.preview || entry.content,
-      query
-    );
+    if (entry.content_type === 'image') {
+      const imgWrap = document.createElement('div');
+      imgWrap.className = 'clip-image-wrap';
+
+      const img = document.createElement('img');
+      img.className = 'clip-image-thumb';
+      img.alt = 'Clipboard image';
+      imgWrap.appendChild(img);
+
+      const imgLabel = document.createElement('div');
+      imgLabel.className = 'clip-image-label';
+      imgLabel.textContent = entry.preview || 'Image';
+
+      card.appendChild(imgWrap);
+      card.appendChild(imgLabel);
+
+      window.api.getEntryImage(entry.id).then((dataUri) => {
+        if (dataUri) img.src = dataUri;
+      }).catch(() => {});
+
+      const preview = document.createElement('div');
+      preview.className = 'clip-preview';
+      preview.style.display = 'none';
+      card.appendChild(preview);
+    } else {
+      const preview = document.createElement('div');
+      preview.className = 'clip-preview';
+      preview.innerHTML = window.search.highlight(
+        entry.preview || entry.content,
+        query
+      );
+      card.appendChild(preview);
+    }
 
     const footer = document.createElement('div');
     footer.className = 'clip-footer';
@@ -79,7 +106,6 @@ window.ui = (() => {
     actions.appendChild(deleteBtn);
     footer.appendChild(timestamp);
     footer.appendChild(actions);
-    card.appendChild(preview);
     card.appendChild(footer);
 
     return card;
