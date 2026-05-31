@@ -262,6 +262,29 @@ fn unlock_private_mode(
     cfg.private_mode_locked = false;
     config::save_config(&cfg)?;
     monitor.private_mode.store(false, Ordering::Relaxed);
+
+    // Sync last_content with current clipboard to prevent re-adding on next poll
+    if let Ok(mut clip) = arboard::Clipboard::new() {
+        if let Ok(text) = clip.get_text() {
+            if let Ok(mut last) = monitor.last_content.lock() {
+                *last = Some(text);
+            }
+        }
+        if let Ok(img) = clip.get_image() {
+            let w = img.width as u32;
+            let h = img.height as u32;
+            if w > 0 && h > 0 && w <= 3840 && h <= 2160 {
+                let raw = img.bytes.to_vec();
+                let expected = (w as usize) * (h as usize) * 4;
+                if raw.len() == expected {
+                    if let Ok(mut last) = monitor.last_image_hash.lock() {
+                        *last = Some(hash_bytes(&raw));
+                    }
+                }
+            }
+        }
+    }
+
     Ok(true)
 }
 
@@ -371,12 +394,17 @@ fn get_foreground_app() -> String {
 
 #[tauri::command]
 fn copy_and_paste(text: String, monitor: State<'_, ClipboardMonitor>, window: tauri::Window) -> Result<(), String> {
+    // Set dedup flags BEFORE writing to clipboard to prevent the polling interval
+    // from detecting the new text as a new entry in the race window
+    if let Ok(mut last) = monitor.last_content.lock() {
+        *last = Some(text.clone());
+    }
+    if let Ok(mut app) = monitor.last_app_copy.lock() {
+        *app = Some(text.clone());
+    }
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     clip.set_text(&text).map_err(|e| e.to_string())?;
     drop(clip);
-    if let Ok(mut last) = monitor.last_app_copy.lock() {
-        *last = Some(text.clone());
-    }
     let _ = window.hide();
     std::thread::sleep(std::time::Duration::from_millis(50));
     simulate_paste();
@@ -462,7 +490,12 @@ fn register_hotkey(
     hotkey_str: String,
 ) -> Result<(), String> {
     if hotkey::is_wayland() {
-        return Err("Global shortcuts not supported on Wayland via this method".to_string());
+        let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
+        return Err(format!(
+            "Wayland does not support global shortcuts via this method.\n\
+             Add a custom keybind in your DE settings to run:\n  {} toggle",
+            exe
+        ));
     }
     let shortcut = hotkey::parse_hotkey(&hotkey_str)?;
     app_handle.global_shortcut().register(shortcut).map_err(|e| e.to_string())?;
@@ -479,6 +512,12 @@ fn copy_to_clipboard(text: String, monitor: State<'_, ClipboardMonitor>) -> Resu
     }
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     clip.set_text(&text).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_ignore_blur(monitor: State<'_, ClipboardMonitor>, ignore: bool) -> Result<(), String> {
+    monitor.ignore_blur.store(ignore, Ordering::Relaxed);
     Ok(())
 }
 
@@ -609,6 +648,19 @@ pub fn run() {
                 }
             }
         }
+        if let Ok(img) = clip.get_image() {
+            let w = img.width as u32;
+            let h = img.height as u32;
+            if w > 0 && h > 0 && w <= 3840 && h <= 2160 {
+                let raw = img.bytes.to_vec();
+                let expected = (w as usize) * (h as usize) * 4;
+                if raw.len() == expected {
+                    if let Ok(mut last) = monitor.last_image_hash.lock() {
+                        *last = Some(hash_bytes(&raw));
+                    }
+                }
+            }
+        }
     }
 
     if loaded_config.autostart {
@@ -634,6 +686,7 @@ pub fn run() {
                             } else {
                                 let _ = window.show();
                                 let _ = window.set_focus();
+                                let _ = app.emit("hotkey-show", ());
                             }
                         }
                     }
@@ -682,6 +735,7 @@ pub fn run() {
                             } else {
                                 let _ = window.show();
                                 let _ = window.set_focus();
+                                let _ = app.emit("hotkey-show", ());
                             }
                         }
                     }
@@ -695,6 +749,7 @@ pub fn run() {
                                 } else {
                                     let _ = window.show();
                                     let _ = window.set_focus();
+                                    let _ = app.emit("hotkey-show", ());
                                 }
                             }
                         }
@@ -729,12 +784,15 @@ pub fn run() {
             };
 
             if hotkey::is_wayland() {
+                let exe_path = std::env::current_exe().unwrap_or_default();
+                let toggle_cmd = format!("{} toggle", exe_path.display());
                 eprintln!(
                     "Ctrl+C: Wayland detected. Global shortcuts require xdg-desktop-portal \
                      or manual DE keybind configuration. To use a custom keybind, set your \
-                     DE shortcut to run '{} toggle'.",
-                    std::env::current_exe().unwrap_or_default().display()
+                     DE shortcut to run '{}'.",
+                    toggle_cmd
                 );
+                let _ = app.emit("wayland-hotkey-info", &toggle_cmd);
             } else {
                 match hotkey::parse_hotkey(&hotkey_str) {
                     Ok(shortcut) => {
@@ -752,7 +810,10 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Focused(false) = event {
-                let _ = window.hide();
+                let monitor: State<'_, ClipboardMonitor> = window.state();
+                if !monitor.ignore_blur.load(Ordering::Relaxed) {
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -778,6 +839,7 @@ pub fn run() {
             get_entry_image,
             check_clipboard,
             set_monitoring,
+            set_ignore_blur,
             register_hotkey,
             get_app_names,
         ])

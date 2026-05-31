@@ -91,5 +91,8 @@ window.api = (() => {
 
     setEntryName: (id, name) =>
       invoke('set_entry_name', { id, name }),
+
+    setIgnoreBlur: (ignore) =>
+      invoke('set_ignore_blur', { ignore }),
   };
 })();

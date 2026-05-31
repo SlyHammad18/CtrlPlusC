@@ -25,6 +25,12 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
 }
+.clip-card.selected .clip-action-btn {
+  opacity: 0.5;
+}
+.clip-card.selected .clip-action-btn:hover {
+  opacity: 1;
+}
 
 .clip-source-app {
   font-size: 10px;

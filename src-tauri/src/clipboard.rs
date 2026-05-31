@@ -9,6 +9,7 @@ pub struct ClipboardMonitor {
     pub last_content: Arc<Mutex<Option<String>>>,
     pub last_app_copy: Arc<Mutex<Option<String>>>,
     pub last_image_hash: Arc<Mutex<Option<u64>>>,
+    pub ignore_blur: Arc<AtomicBool>,
 }
 
 impl ClipboardMonitor {
@@ -19,6 +20,7 @@ impl ClipboardMonitor {
             last_content: Arc::new(Mutex::new(None)),
             last_app_copy: Arc::new(Mutex::new(None)),
             last_image_hash: Arc::new(Mutex::new(None)),
+            ignore_blur: Arc::new(AtomicBool::new(false)),
         }
     }
 }

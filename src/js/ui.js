@@ -124,18 +124,18 @@ window.ui = (() => {
     card.className = 'clip-card' + (entry.is_pinned ? ' pinned' : '') + ' entering' + (entry.content_type === 'image' ? ' clip-card-image' : '');
     card.dataset.id = entry.id;
 
-    const nameEl = document.createElement('div');
-    nameEl.className = 'clip-name';
-    nameEl.dataset.id = entry.id;
-    if (entry.name) {
-      nameEl.textContent = entry.name;
-      nameEl.classList.add('has-name');
-    } else {
-      nameEl.textContent = 'Add name…';
-      nameEl.classList.add('no-name');
-    }
-
     if (entry.content_type === 'image') {
+      const nameEl = document.createElement('div');
+      nameEl.className = 'clip-name';
+      nameEl.dataset.id = entry.id;
+      if (entry.name) {
+        nameEl.textContent = entry.name;
+        nameEl.classList.add('has-name');
+      } else {
+        nameEl.textContent = 'Add name…';
+        nameEl.classList.add('no-name');
+      }
+
       const imgWrap = document.createElement('div');
       imgWrap.className = 'clip-image-wrap';
 
@@ -161,7 +161,6 @@ window.ui = (() => {
       preview.style.display = 'none';
       card.appendChild(preview);
     } else {
-      card.appendChild(nameEl);
       const preview = document.createElement('div');
       preview.className = 'clip-preview';
       preview.innerHTML = window.search.highlight(

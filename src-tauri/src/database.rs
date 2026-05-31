@@ -75,6 +75,7 @@ impl Database {
         self.add_entry_ext(content, "text", None, 0, 0, is_private, source_app)
     }
 
+    #[cfg(test)]
     pub fn add_image_entry(&self, raw_rgba: &[u8], width: u32, height: u32, is_private: bool) -> Result<Entry, String> {
         self.add_entry_ext("", "image", Some(raw_rgba), width as i32, height as i32, is_private, "")
     }
@@ -214,12 +215,21 @@ impl Database {
 
     pub fn set_entry_name(&self, id: i64, name: &str) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let affected = conn
-            .execute("UPDATE entries SET name = ?1 WHERE id = ?2", params![name, id])
-            .map_err(|e| e.to_string())?;
-        if affected == 0 {
-            return Err("Entry not found".to_string());
+        let content_type: String = conn
+            .query_row(
+                "SELECT content_type FROM entries WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Entry not found".to_string())?;
+        if content_type == "text" {
+            return Err("Text entries cannot have names".to_string());
         }
+        conn.execute(
+            "UPDATE entries SET name = ?1 WHERE id = ?2",
+            params![name, id],
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 

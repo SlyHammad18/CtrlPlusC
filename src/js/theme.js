@@ -17,7 +17,8 @@ window.theme = (() => {
     root.style.setProperty('--border', t.border);
     root.style.setProperty('--border-card', t.border_card);
     root.style.setProperty('--border-radius', t.border_radius);
-    root.style.setProperty('--font-family', t.font_family);
+    const font = t.font_family && !t.font_family.startsWith('#') ? t.font_family : 'Inter, system-ui, sans-serif';
+    root.style.setProperty('--font-family', font);
     root.style.setProperty('--font-size', t.font_size);
   }
 

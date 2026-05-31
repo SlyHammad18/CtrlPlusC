@@ -164,36 +164,192 @@
   });
 
   let selectedIndex = -1;
+  let selectedActionIndex = -1;
+
+  function selectCard(cards, idx) {
+    cards.forEach((c) => c.classList.remove('selected'));
+    if (idx >= 0 && idx < cards.length) {
+      cards[idx].classList.add('selected');
+      cards[idx].scrollIntoView({ block: 'nearest' });
+    }
+    selectedActionIndex = -1;
+  }
+
+  function isInputFocused() {
+    const tag = document.activeElement?.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
+  function isOverlayOpen(id) {
+    const el = document.getElementById(id);
+    return el && (el.classList.contains('visible') || el.classList.contains('open'));
+  }
+
   document.addEventListener('keydown', async (e) => {
     const cards = cardList.querySelectorAll('.clip-card');
-    if (cards.length === 0) return;
+    const searchInput = document.getElementById('search-input');
 
-    if (e.key === 'ArrowDown') {
+    // Escape: close overlays or hide to tray
+    if (e.key === 'Escape') {
+      if (isOverlayOpen('theme-overlay')) {
+        document.getElementById('btn-theme-close')?.click();
+        e.preventDefault();
+        return;
+      }
+      if (isOverlayOpen('edit-overlay')) {
+        window.ui.hideEdit();
+        e.preventDefault();
+        return;
+      }
+      if (isOverlayOpen('settings-overlay')) {
+        document.getElementById('btn-settings-close')?.click();
+        e.preventDefault();
+        return;
+      }
+      if (isOverlayOpen('filter-panel')) {
+        window.ui.hideFilterPanel();
+        e.preventDefault();
+        return;
+      }
+      if (appWindow) {
+        appWindow.hide();
+        e.preventDefault();
+      }
+      return;
+    }
+
+    // Ctrl+/ toggle search focus
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
       e.preventDefault();
-      selectedIndex = Math.min(selectedIndex + 1, cards.length - 1);
-      cards.forEach((c) => c.classList.remove('selected'));
-      cards[selectedIndex].classList.add('selected');
-      cards[selectedIndex].scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'ArrowUp') {
+      if (document.activeElement === searchInput) {
+        searchInput?.blur();
+      } else {
+        searchInput?.focus();
+      }
+      return;
+    }
+
+    // Ctrl+ shortcuts (work regardless of input focus)
+    if (e.ctrlKey || e.metaKey) {
+      switch (e.key.toLowerCase()) {
+        case 'l':
+          e.preventDefault();
+          handleLockAction();
+          return;
+        case 'r':
+          e.preventDefault();
+          btnStop?.click();
+          return;
+        case 'i':
+          e.preventDefault();
+          if (isOverlayOpen('settings-overlay')) {
+            document.getElementById('btn-settings-close')?.click();
+          } else {
+            document.getElementById('btn-settings')?.click();
+          }
+          return;
+        case 'd':
+          e.preventDefault();
+          document.getElementById('btn-clear-all')?.click();
+          return;
+        case 'f':
+          e.preventDefault();
+          document.getElementById('btn-filter')?.click();
+          return;
+      }
+    }
+
+    // ArrowDown from search focuses first card
+    if (e.key === 'ArrowDown' && document.activeElement === searchInput && cards.length > 0) {
       e.preventDefault();
-      selectedIndex = Math.max(selectedIndex - 1, 0);
-      cards.forEach((c) => c.classList.remove('selected'));
-      cards[selectedIndex].classList.add('selected');
-      cards[selectedIndex].scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter' && selectedIndex >= 0) {
-      e.preventDefault();
-      copyById(parseInt(cards[selectedIndex].dataset.id));
-    } else if (e.key === 'Delete' && selectedIndex >= 0) {
-      e.preventDefault();
-      const id = parseInt(cards[selectedIndex].dataset.id);
-      const confirmed = await window.ui.showConfirm('Delete this clipboard entry?');
-      if (!confirmed) return;
-      try {
-        await window.api.deleteEntry(id);
-        window.ui.removeCard(id);
-        window.ui.showToast('Entry deleted');
-      } catch (err) {
-        console.error('Delete failed:', err);
+      selectedIndex = 0;
+      selectCard(cards, 0);
+      searchInput?.blur();
+      return;
+    }
+
+    // Card navigation & actions (when not focused in an input)
+    if (!isInputFocused()) {
+      if (e.key === 'ArrowDown' && cards.length > 0) {
+        e.preventDefault();
+        selectedIndex = Math.min(selectedIndex + 1, cards.length - 1);
+        selectCard(cards, selectedIndex);
+        return;
+      }
+
+      if (e.key === 'ArrowUp' && cards.length > 0) {
+        e.preventDefault();
+        selectedIndex = Math.max(selectedIndex - 1, 0);
+        selectCard(cards, selectedIndex);
+        return;
+      }
+
+      if (selectedIndex >= 0 && selectedIndex < cards.length) {
+        const card = cards[selectedIndex];
+        const actionBtns = card.querySelectorAll('.clip-action-btn');
+
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          if (actionBtns.length > 0) {
+            selectedActionIndex = Math.min(selectedActionIndex + 1, actionBtns.length - 1);
+            actionBtns[selectedActionIndex]?.focus();
+          }
+          return;
+        }
+
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          if (actionBtns.length > 0) {
+            selectedActionIndex = Math.max(selectedActionIndex - 1, 0);
+            actionBtns[selectedActionIndex]?.focus();
+          }
+          return;
+        }
+
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          copyById(parseInt(card.dataset.id));
+          return;
+        }
+
+        if (e.key === 'Delete') {
+          e.preventDefault();
+          const id = parseInt(card.dataset.id);
+          const confirmed = await window.ui.showConfirm('Delete this clipboard entry?');
+          if (!confirmed) return;
+          try {
+            await window.api.deleteEntry(id);
+            window.ui.removeCard(id);
+            window.ui.showToast('Entry deleted');
+          } catch (err) {
+            console.error('Delete failed:', err);
+          }
+          return;
+        }
+
+        if (e.key === 'p' || e.key === 'P') {
+          e.preventDefault();
+          const id = parseInt(card.dataset.id);
+          try {
+            await window.api.togglePin(id);
+            window.ui.updatePinState(id, !card.classList.contains('pinned'));
+            loadEntries(window.search.getQuery(), window.search.getFilter());
+          } catch (err) {
+            console.error('Toggle pin failed:', err);
+          }
+          return;
+        }
+
+        if (e.key === 'e' || e.key === 'E') {
+          e.preventDefault();
+          const id = parseInt(card.dataset.id);
+          const entries = await window.api.getEntries(null, null);
+          const entry = entries.find(ent => ent.id === id);
+          if (entry && entry.content_type === 'text') {
+            window.ui.showEdit(id, entry.content);
+          }
+          return;
+        }
       }
     }
   });
@@ -212,12 +368,55 @@
     }
   }
 
+  let _changePasswordFlow = false; // 'verify' | 'new' | false
+  let _privateModeStatus = null;
+
   async function handleUnlockOrSetPassword() {
     const input = document.getElementById('lock-input');
     const password = input ? input.value.trim() : '';
     if (!password) return;
 
     const title = document.getElementById('lock-title');
+
+    // Change password: verify old password first
+    if (_changePasswordFlow === 'verify') {
+      try {
+        const ok = await window.api.unlockPrivateMode(password);
+        if (ok) {
+          _changePasswordFlow = 'new';
+          if (input) { input.value = ''; }
+          document.getElementById('lock-error').textContent = '';
+          document.getElementById('lock-title').textContent = 'Set New Password';
+          document.getElementById('lock-subtitle').textContent = 'Enter your new password';
+          document.getElementById('lock-btn').textContent = 'Set Password';
+          if (input) setTimeout(() => input.focus(), 50);
+        } else {
+          window.ui.setLockError('Wrong password');
+          window.ui.lockShake();
+          if (input) input.value = '';
+        }
+      } catch (err) {
+        window.ui.setLockError(err?.message || 'Verification failed');
+        window.ui.lockShake();
+      }
+      return;
+    }
+
+    // Change password: set new password
+    if (_changePasswordFlow === 'new') {
+      try {
+        await window.api.setPrivateModePassword(password);
+        _changePasswordFlow = false;
+        window.ui.hideLockScreen();
+        window.ui.showToast('Password changed');
+      } catch (err) {
+        window.ui.setLockError(err?.message || 'Failed to set password');
+        window.ui.lockShake();
+      }
+      return;
+    }
+
+    // First-time setup
     if (title && title.textContent === 'Set Password') {
       try {
         await window.api.setPrivateModePassword(password);
@@ -228,6 +427,7 @@
         window.ui.lockShake();
       }
     } else {
+      // Unlock
       try {
         const ok = await window.api.unlockPrivateMode(password);
         if (ok) {
@@ -319,21 +519,38 @@
   });
 
   document.getElementById('btn-settings')?.addEventListener('click', async () => {
-    const cfg = await window.api.getConfig();
-    document.getElementById('setting-hotkey').textContent = cfg.hotkey?.toggle_window || 'Alt+V';
-
+    await window.api.setIgnoreBlur(true);
     try {
-      const enabled = await window.api.isAutostartEnabled();
-      document.getElementById('setting-autostart').checked = enabled;
-    } catch (_) { /* best effort */ }
+      const cfg = await window.api.getConfig();
+      const hotkeyEl = document.getElementById('setting-hotkey');
+      if (window.__onWayland) {
+        hotkeyEl.textContent = window.__toggleCommand;
+        hotkeyEl.title = 'Set this as your DE keybind command';
+        hotkeyEl.style.cursor = 'default';
+        hotkeyEl.classList.remove('settings-hotkey');
+      } else {
+        hotkeyEl.textContent = cfg.hotkey?.toggle_window || 'Alt+V';
+        hotkeyEl.title = 'Click to change';
+        hotkeyEl.style.cursor = '';
+        hotkeyEl.classList.add('settings-hotkey');
+      }
 
-    document.getElementById('setting-font').value = cfg.theme?.font_family || 'Inter, system-ui, sans-serif';
+      try {
+        const enabled = await window.api.isAutostartEnabled();
+        document.getElementById('setting-autostart').checked = enabled;
+      } catch (_) { /* best effort */ }
 
-    const status = await window.api.getPrivateModeStatus();
-    const pwBtn = document.getElementById('btn-settings-password');
-    pwBtn.textContent = status.has_password ? 'Change Password' : 'Set Password';
+      const currentFont = cfg.theme?.font_family;
+      document.getElementById('setting-font').value = (currentFont && !currentFont.startsWith('#')) ? currentFont : 'Inter, system-ui, sans-serif';
 
-    window.ui.showSettings();
+      _privateModeStatus = await window.api.getPrivateModeStatus();
+      const pwBtn = document.getElementById('btn-settings-password');
+      pwBtn.textContent = _privateModeStatus.has_password ? 'Change Password' : 'Set Password';
+
+      window.ui.showSettings();
+    } finally {
+      await window.api.setIgnoreBlur(false);
+    }
   });
 
   let listeningHotkey = false;
@@ -341,7 +558,7 @@
   let hotkeyHandler = null;
 
   hotkeyEl?.addEventListener('click', function () {
-    if (listeningHotkey) return;
+    if (listeningHotkey || window.__onWayland) return;
     listeningHotkey = true;
     this.classList.add('listening');
     this.textContent = 'Press keys...';
@@ -451,7 +668,20 @@
 
   document.getElementById('btn-settings-password')?.addEventListener('click', () => {
     window.ui.hideSettings();
-    window.ui.showPasswordSetup();
+    if (_privateModeStatus && _privateModeStatus.has_password) {
+      _changePasswordFlow = 'verify';
+      const overlay = document.getElementById('lock-overlay');
+      overlay.classList.add('visible');
+      const input = document.getElementById('lock-input');
+      if (input) { input.value = ''; input.classList.remove('shake'); input.type = 'password'; }
+      document.getElementById('lock-error').textContent = '';
+      document.getElementById('lock-title').textContent = 'Enter Current Password';
+      document.getElementById('lock-subtitle').textContent = 'Verify your identity to change password';
+      document.getElementById('lock-btn').textContent = 'Verify';
+      if (input) setTimeout(() => input.focus(), 100);
+    } else {
+      window.ui.showPasswordSetup();
+    }
   });
 
   const themeFields = [
@@ -468,7 +698,6 @@
     { key: 'success', label: 'Success' },
     { key: 'border', label: 'Border' },
     { key: 'border_card', label: 'Card Border' },
-    { key: 'font_family', label: 'Font Family' },
   ];
 
   const presets = [
@@ -680,6 +909,33 @@
   if (window.__TAURI__?.event?.listen) {
     window.__TAURI__.event.listen('private-mode-locked', () => {
       window.ui.showLockScreen();
+    });
+
+    window.__TAURI__.event.listen('hotkey-show', () => {
+      window.ui.hideSettings();
+      window.ui.hideEdit();
+      document.getElementById('theme-overlay')?.classList.remove('visible');
+      window.ui.hideFilterPanel();
+
+      const cards = cardList.querySelectorAll('.clip-card');
+      if (cards.length > 0) {
+        selectedIndex = 0;
+        selectCard(cards, 0);
+        cards[0].focus();
+      }
+    });
+
+    window.__TAURI__.event.listen('wayland-hotkey-info', (event) => {
+      const cmd = event.payload;
+      window.ui.showToast(
+        'Wayland: set DE keybind to run "' + cmd + ' toggle" for Alt+V',
+        5000
+      );
+      document.getElementById('setting-hotkey').textContent = cmd + ' toggle';
+      document.getElementById('setting-hotkey').title = 'Set this as your DE keybind command';
+      document.getElementById('setting-hotkey').style.cursor = 'default';
+      window.__onWayland = true;
+      window.__toggleCommand = cmd + ' toggle';
     });
   }
 

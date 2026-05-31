@@ -200,6 +200,7 @@
   width: 140px;
   outline: none;
   flex-shrink: 0;
+  text-align: center;
   transition: border-color 0.15s ease;
 }
 

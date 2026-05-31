@@ -1025,3 +1025,268 @@
 - Search for text entries still matches content; images without names are excluded from search
 - Once named, images appear in search results when the query matches their name
 - Name editing is inline (no modal overlay) for speed
+
+---
+
+## [Bugfix] — Font Family Reset on Restart (#000000) — 2026-05-25
+
+### ✅ What Changed
+- **`src/js/app.js`**:
+  - Removed `font_family` from `themeFields` array — the theme editor was creating a `<input type="color">` for it, which converted `"Inter, system-ui, sans-serif"` to `#000000` (invalid hex fallback)
+  - Font family is now only editable via the dedicated text input in Settings (not the theme color editor)
+  - Settings font input now checks for hex color values and falls back to default
+- **`src/js/theme.js`**: `applyTheme()` now checks if `font_family` starts with `#` (hex color) and falls back to `'Inter, system-ui, sans-serif'` — fixes already-corrupted configs on restart
+
+### ⏭️ What Was Not Changed
+- No backend Rust changes
+- No schema or migration changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Existing configs with `font_family = "#000000"` will auto-reset to default on next load
+- The dedicated font input in Settings (Settings → Font) still works as before
+- Theme presets were never setting font_family, so this was only triggered when opening the theme editor and clicking Save
+
+---
+
+## [Unplanned] — Names Restricted to Image Entries Only — 2026-05-25
+
+### ✅ What Changed
+- **`src/js/ui.js`**: Name element (`clip-name`) now only created and appended for image entries — text entries no longer show a name row
+- **`src-tauri/src/database.rs`**: `set_entry_name()` now checks `content_type` and rejects text entries with `"Text entries cannot have names"` error
+- **`Docs/changelog.md`**: Updated
+
+### ⏭️ What Was Not Changed
+- Existing image names preserved
+- No schema changes
+- No frontend JS changes beyond ui.js
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Backend also hardened to prevent setting names on text entries via direct IPC calls
+
+---
+
+## [Bugfix] — Unlock Re-adds Last Clipboard Entry — 2026-05-25
+
+### ✅ What Changed
+- **`src-tauri/src/lib.rs`** — `unlock_private_mode()` now reads the current clipboard content (text and image) and syncs it to `last_content` / `last_image_hash` before resuming monitoring. This prevents the next poll from treating it as a new entry.
+  - Lock had already set `last_content = None`, but unlock never re-synced with the actual clipboard state
+
+### ⏭️ What Was Not Changed
+- No frontend changes
+- No database schema changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Now uses the same pattern as `clear_all()` — reads clipboard after a state change and seeds the dedup cache
+
+---
+
+## [Unplanned] — Full Keyboard Navigation & Shortcuts — 2026-05-25
+
+### ✅ What Changed
+- **`src/styles/cards.css`** — Action buttons (copy/pin/edit/delete) now visible at 50% opacity on the selected card (not just on hover), making keyboard navigation usable
+- **`src/js/app.js`** — Replaced the keydown handler with a comprehensive system:
+  - **Escape** closes any open overlay (theme editor, edit, settings, filter panel) or hides to tray
+  - **ArrowUp/Down** — navigate cards (existing, preserved)
+  - **ArrowLeft/Right** on selected card — cycle focus through action buttons (copy → pin → edit → delete)
+  - **Enter** on selected card — copy & paste (existing, preserved)
+  - **Delete** on selected card — delete with confirmation (existing, preserved)
+  - **P** on selected card — toggle pin/unpin
+  - **E** on selected card — open edit overlay (text entries only)
+  - **S** — focus search input
+  - **R** — toggle recording (stop/start)
+  - **F** — toggle filter panel
+  - **L** — lock/private mode
+  - **C** — clear all history (with confirmation)
+  - **T** — hide window to tray
+  - All shortcuts are blocked when an input/textarea is focused to avoid accidental triggers while typing
+
+### ⏭️ What Was Not Changed
+- No backend changes
+- No HTML changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Action buttons become focusable via ArrowLeft/Right when a card is selected, using native `.focus()` on the `<button>` elements
+- `selectedActionIndex` resets when navigating to a different card
+
+---
+
+## [Unplanned] — Ctrl+ Shortcuts & Search Arrow Navigation — 2026-05-25
+
+### ✅ What Changed
+- **`src/js/app.js`** — Rewired keyboard shortcuts to Ctrl+ combinations:
+  - **`Ctrl+/`** — toggle search focus (focus if not focused, blur if focused)
+  - **`Ctrl+L`** — lock private mode
+  - **`Ctrl+R`** — toggle recording (stop/start)
+  - **`Ctrl+I`** — toggle settings panel (open/close)
+  - **`Ctrl+D`** — clear all history (with confirmation)
+  - **`Ctrl+F`** — toggle filter panel
+  - **ArrowDown in search** — moves focus to first card, blurs search input
+  - Single-letter global shortcuts (S, R, F, L, C, T) removed in favor of Ctrl+ combos
+  - Card-level shortcuts (P for pin, E for edit) kept as-is (no conflict)
+
+### ⏭️ What Was Not Changed
+- No backend changes
+- No CSS/HTML changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Ctrl+ shortcuts work regardless of input focus (user can `Ctrl+L` while typing in search)
+- `Ctrl+/` uses `e.key === '/'` which works across keyboard layouts for the `/` key
+- `e.key.toLowerCase()` normalizes the Ctrl+ combo key check
+- Also supports `metaKey` for macOS compatibility
+
+---
+
+## [Unplanned] — Change Password Requires Verification — 2026-05-25
+
+### ✅ What Changed
+- **`src/js/app.js`** — "Change Password" button now asks for the current password first:
+  - `_changePasswordFlow` state variable tracks the two-step flow (`'verify'` → `'new'`)
+  - First step: lock screen shows "Enter Current Password" with "Verify" button
+  - After successful verification: switches to "Set New Password" screen
+  - After setting: toast "Password changed", lock screen hidden
+  - `_privateModeStatus` cached from the settings open handler for the button click handler
+  - First-time "Set Password" flow unchanged
+
+### ⏭️ What Was Not Changed
+- No backend changes (reuses existing `unlockPrivateMode` + `setPrivateModePassword` commands)
+- No CSS/HTML changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Wrong current password shows error + shake (same as unlock)
+- If user closes settings and reopens, `_privateModeStatus` is refreshed
+
+---
+
+## [Unplanned] — Alt+V Selects First Entry — 2026-05-25
+
+### ✅ What Changed
+- **`src-tauri/src/lib.rs`** — All three show-window paths (global hotkey, tray icon click, tray menu "Show/Hide") now emit a `hotkey-show` Tauri event when the window is shown
+- **`src/js/app.js`** — Listens for `hotkey-show` event and selects the first clipboard card (`selectedIndex = 0`), visually highlights it with the selected border
+
+### ⏭️ What Was Not Changed
+- No CSS/HTML changes
+- No database or config changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Selecting the first card also calls `.focus()` on it so keyboard navigation (ArrowLeft/Right for action buttons) works immediately
+- Works from global hotkey (Alt+V), tray icon click, and tray menu Show/Hide
+
+---
+
+## [Unplanned] — Wayland/Hyprland Hotkey Info — 2026-05-25
+
+### ✅ What Changed
+- **`src-tauri/src/lib.rs`**:
+  - Startup now emits `wayland-hotkey-info` event with the toggle command path on Wayland
+  - `register_hotkey` error message improved to show the command the user should bind
+- **`src/js/app.js`**:
+  - Listens for `wayland-hotkey-info` event → shows a 5-second toast with the command
+  - Caches `__onWayland` and `__toggleCommand` for settings display
+  - Settings hotkey row shows the full command path instead of "Alt+V" on Wayland
+  - Hotkey click handler disabled on Wayland (no `SettingsHotkey` class, no listening mode)
+- **`src/js/api.js`** — Unchanged (no new API needed, everything via events)
+
+### ⏭️ What Was Not Changed
+- Non-Wayland hotkey registration unchanged
+- No database or config changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- The toggle command is shown in settings as e.g., `/usr/bin/ctrl-c toggle` — user can copy and bind it in their Hyprland config
+- Works for any Wayland compositor (not just Hyprland)
+
+---
+
+## [Unplanned] — MSI Installer Build — 2026-05-25
+
+### ✅ What Changed
+- Ran `npm run tauri build` — produced release binaries:
+  - `src-tauri/target/release/bundle/msi/Ctrl+C_0.1.0_x64_en-US.msi`
+  - `src-tauri/target/release/bundle/nsis/Ctrl+C_0.1.0_x64-setup.exe`
+  - `src-tauri/target/release/ctrl-c.exe`
+
+### ⏭️ What Was Not Changed
+- No code changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- MSI built with default WiX configuration
+- Bundle identifier `com.ctrl-c.app` (warning about `.app` suffix is cosmetic on Windows)
+
+---
+
+## [Bugfix] — Edit Creates Duplicate Entry + MSI Rebuild — 2026-05-25
+
+### ✅ What Changed
+- **`src-tauri/src/lib.rs`** — `copy_and_paste()` now sets both `last_content` and `last_app_copy` BEFORE writing to the clipboard. Previously it wrote to the clipboard first, then set `last_app_copy`, creating a race window where the 500ms polling interval could detect the new clipboard content as a new entry before the dedup flag was set.
+- Rebuilt MSI + NSIS installers
+
+### ⏭️ What Was Not Changed
+- `copy_to_clipboard()` already had the correct order (dedup flags first)
+- `copy_image_and_paste()` already had the correct order
+- No database or frontend changes
+
+### ❌ Errors Faced
+- None
+
+### 📝 Notes
+- Race window was ~microseconds but enough for the polling interval to fire and add a duplicate
+- Fix is consistent with the pattern used in `copy_to_clipboard` and `copy_image_and_paste`
+
+---
+
+## [Cleanup] — Suppress `add_image_entry` Warning + Verify Hotkey Default — 2026-05-25
+
+### ✅ What Changed
+- **`src-tauri/src/database.rs`** — Added `#[cfg(test)]` to `add_image_entry()` since it's only used in unit tests. Eliminates the `dead_code` warning in release builds.
+- Hotkey default confirmed as `Alt+V` in `config.rs` default, JS settings fallback, and hotkey listener fallback — no change needed.
+- Rebuilt MSI + NSIS installers with zero warnings.
+
+### ⏭️ What Was Not Changed
+- No functional changes
+
+### ❌ Errors Faced
+- None
+
+---
+
+## [Bugfix] — Restart Dedup + Settings-Close — 2026-06-01
+
+### ✅ What Changed
+- **`src-tauri/src/lib.rs`** — Startup block now initializes `last_image_hash` with the current clipboard image (matching the existing text init). Prevents duplicate image entries after restart.
+- **`src-tauri/src/clipboard.rs`** — Added `ignore_blur: Arc<AtomicBool>` to `ClipboardMonitor`.
+- **`src-tauri/src/lib.rs`** — Added `set_ignore_blur` command + `Focused(false)` handler checks `ignore_blur`. Stops spurious blur events from hiding window during async overlay setup.
+- **`src/js/api.js`** — Added `setIgnoreBlur()` wrapper.
+- **`src/js/app.js`** — Settings click handler wraps async IPC with `setIgnoreBlur(true/false)`.
+
+### ⏭️ What Was Not Changed
+- No schema, config, or layout changes.
+- Other overlays left as-is (no IPC before showing).
+
+### ❌ Errors Faced
+- None
