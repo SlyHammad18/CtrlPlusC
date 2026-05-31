@@ -13,6 +13,12 @@
   <img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.1.0">
+    <img src="https://img.shields.io/github/v/release/SlyHammad18/CtrlPlusC?style=for-the-badge&logo=github&label=Download" alt="Download" />
+  </a>
+</p>
+
 **Ctrl+C** is a lightweight, privacy-first clipboard manager that lives in the system tray. It automatically captures clipboard history, supports search and filtering, pinning, private mode with password lock, and is fully themeable.
 
 Built with **Tauri v2** (Rust backend + Vanilla JS frontend) for a tiny memory footprint (~15 MB).
@@ -38,7 +44,7 @@ Built with **Tauri v2** (Rust backend + Vanilla JS frontend) for a tiny memory f
 
 ### Windows
 
-Download the MSI installer from the [releases page](../../releases) and run it.
+Download the [latest MSI installer](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.1.0) and run it.
 
 ```
 Ctrl+C_0.1.0_x64_en-US.msi
@@ -48,7 +54,7 @@ The app requires **WebView2** (pre-installed on Windows 10+).
 
 ### Linux
 
-Packages available for Arch, Debian/Ubuntu, and Fedora. See the [releases page](../../releases).
+Download the `.deb` or `.tar.gz` from the [latest release](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.1.0).
 
 **Dependencies:**
 - **Arch:** `webkit2gtk`, `libappindicator-gtk3`
@@ -165,7 +171,7 @@ autostart = false
 ### Setup
 
 ```bash
-git clone https://github.com/your-org/ctrl-c.git
+git clone https://github.com/SlyHammad18/CtrlPlusC.git
 cd ctrl-c
 
 npm install
@@ -264,4 +270,4 @@ Database: SQLite (history.db)
 
 ## License
 
-MIT
+[MIT](LICENSE)
