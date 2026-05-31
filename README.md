@@ -1,4 +1,17 @@
-# Ctrl+C — Cross-Platform Clipboard Manager
+<p align="center">
+  <img src="Assets/logo.png" alt="Ctrl+C Logo" width="96" />
+</p>
+
+<h1 align="center">Ctrl+C — Clipboard Manager</h1>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" />
+  <img src="https://img.shields.io/badge/Tauri-FFC131?style=for-the-badge&logo=tauri&logoColor=black" alt="Tauri" />
+  <img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" alt="JavaScript" />
+  <img src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" />
+  <img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows" />
+  <img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux" />
+</p>
 
 **Ctrl+C** is a lightweight, privacy-first clipboard manager that lives in the system tray. It automatically captures clipboard history, supports search and filtering, pinning, private mode with password lock, and is fully themeable.
 
