@@ -1,6 +1,6 @@
 [package]
 name = "ctrl-c"
-version = "0.1.0"
+version = "0.2.0"
 description = "Ctrl+C — Cross-Platform Clipboard Manager"
 authors = ["Ctrl+C Contributors"]
 edition = "2021"
