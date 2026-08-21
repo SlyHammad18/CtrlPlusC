@@ -32,8 +32,8 @@ window.api = (() => {
     deleteEntry: (id) =>
       invoke('delete_entry', { id }),
 
-    clearAll: () =>
-      invoke('clear_all'),
+    clearAll: (keepPinned = false) =>
+      invoke('clear_all', { keepPinned }),
 
     togglePin: (id) =>
       invoke('toggle_pin', { id }),
@@ -94,5 +94,8 @@ window.api = (() => {
 
     setIgnoreBlur: (ignore) =>
       invoke('set_ignore_blur', { ignore }),
+
+    getFocusMode: () =>
+      invoke('get_focus_mode'),
   };
 })();

@@ -252,9 +252,9 @@ window.ui = (() => {
             </svg>
           </div>
           <p class="empty-text">No clipboard history</p>
-          <p class="empty-hint">Select some text and copy it —<br/>it will appear here</p>
+          <p class="empty-hint">Copy anything, text or images, and it will appear here</p>
           <div class="empty-shortcut">
-            <span class="shortcut-key">${window.api.getHotkeyDisplay ? 'Alt+V' : 'Alt+V'}</span>
+            <span class="shortcut-key">Alt+V</span>
             <span class="shortcut-label">to toggle window</span>
           </div>
         `;
@@ -291,12 +291,17 @@ window.ui = (() => {
       label.className = 'group-label';
       label.textContent = group.label;
       divider.appendChild(label);
+      const count = document.createElement('span');
+      count.className = 'group-count';
+      count.textContent = group.items.length;
+      divider.appendChild(count);
       fragment.appendChild(divider);
       group.items.forEach((entry) => {
         fragment.appendChild(createCard(entry, query));
       });
     });
     cardList.appendChild(fragment);
+    updateCount();
   }
 
   function prependCard(entry) {
@@ -333,6 +338,8 @@ window.ui = (() => {
       const span = div.querySelector('.group-label');
       if (span && span.textContent === targetLabel) {
         cardList.insertBefore(card, div.nextSibling);
+        const count = div.querySelector('.group-count');
+        if (count) count.textContent = parseInt(count.textContent || '0', 10) + 1;
         inserted = true;
         break;
       }
@@ -357,6 +364,10 @@ window.ui = (() => {
       newLabel.className = 'group-label';
       newLabel.textContent = targetLabel;
       newDivider.appendChild(newLabel);
+      const newCount = document.createElement('span');
+      newCount.className = 'group-count';
+      newCount.textContent = '1';
+      newDivider.appendChild(newCount);
       if (refNode) {
         cardList.insertBefore(newDivider, refNode);
         cardList.insertBefore(card, refNode);
@@ -365,6 +376,8 @@ window.ui = (() => {
         cardList.appendChild(card);
       }
     }
+
+    updateCount();
 
     requestAnimationFrame(() => {
       card.classList.remove('entering');
@@ -378,10 +391,45 @@ window.ui = (() => {
     card.classList.add('removing');
     setTimeout(() => {
       card.remove();
+      updateCount();
       if (cardList.children.length <= 1) {
         emptyState.style.display = 'flex';
       }
     }, 250);
+  }
+
+  function updateCount() {
+    const el = document.getElementById('footer-count');
+    if (!el) return;
+    const n = cardList.querySelectorAll('.clip-card').length;
+    el.textContent = n ? `${n} ${n === 1 ? 'entry' : 'entries'}` : '';
+  }
+
+  function showLoading() {
+    emptyState.style.display = 'none';
+    cardList.innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+      const sk = document.createElement('div');
+      sk.className = 'skeleton-card';
+      cardList.appendChild(sk);
+    }
+  }
+
+  function flashCopied(id) {
+    const card = cardList.querySelector(`[data-id="${id}"]`);
+    if (!card) return;
+    card.classList.remove('copied');
+    void card.offsetWidth;
+    card.classList.add('copied');
+    const copyBtn = card.querySelector('.copy-btn');
+    const prev = copyBtn ? copyBtn.innerHTML : null;
+    if (copyBtn && prev) {
+      copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    }
+    setTimeout(() => {
+      card.classList.remove('copied');
+      if (copyBtn && prev) copyBtn.innerHTML = prev;
+    }, 700);
   }
 
   function updatePinState(id, isPinned) {
@@ -458,6 +506,65 @@ window.ui = (() => {
       okBtn.addEventListener('click', () => close(true));
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) close(false);
+      });
+    });
+  }
+
+  function showClearAllDialog() {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+
+      const box = document.createElement('div');
+      box.className = 'confirm-box';
+
+      const text = document.createElement('p');
+      text.className = 'confirm-text';
+      text.textContent = 'Clear clipboard history?';
+
+      const hint = document.createElement('p');
+      hint.className = 'confirm-hint';
+      hint.textContent = 'Pinned entries are saved from deletion if you choose.';
+
+      const actions = document.createElement('div');
+      actions.className = 'confirm-actions confirm-actions-col';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'confirm-btn confirm-cancel';
+      cancelBtn.textContent = 'Cancel';
+
+      const keepBtn = document.createElement('button');
+      keepBtn.className = 'confirm-btn confirm-keep';
+      keepBtn.textContent = 'Clear all, keep pinned';
+
+      const allBtn = document.createElement('button');
+      allBtn.className = 'confirm-btn confirm-ok';
+      allBtn.textContent = 'Delete everything';
+
+      actions.appendChild(keepBtn);
+      actions.appendChild(allBtn);
+      actions.appendChild(cancelBtn);
+      box.appendChild(text);
+      box.appendChild(hint);
+      box.appendChild(actions);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      requestAnimationFrame(() => {
+        overlay.classList.add('confirm-visible');
+      });
+
+      function close(result) {
+        overlay.classList.remove('confirm-visible');
+        setTimeout(() => overlay.remove(), 200);
+        resolve(result);
+      }
+
+      cancelBtn.addEventListener('click', () => close(null));
+      keepBtn.addEventListener('click', () => close('keep'));
+      allBtn.addEventListener('click', () => close('all'));
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) close(null);
       });
     });
   }
@@ -643,5 +750,5 @@ window.ui = (() => {
     closeFilterPanel();
   }
 
-  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit, showFilterPanel, hideFilterPanel, updateFilterBadge, renderFilterList };
+  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showClearAllDialog, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit, showFilterPanel, hideFilterPanel, updateFilterBadge, renderFilterList, showLoading, flashCopied, updateCount };
 })();

@@ -3,7 +3,9 @@ mod clipboard;
 mod config;
 mod database;
 mod hotkey;
+mod paste;
 mod private_mode;
+mod wayland_focus;
 
 use clipboard::{hash_bytes, ClipboardMonitor};
 use config::Config;
@@ -18,6 +20,223 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
+// ---------------------------------------------------------------------------
+// GTK direct hide (Linux) -- Tauri v2's WebviewWindow::hide() is broken on
+// Wayland: it returns Ok() without actually unmapping the window.
+//
+// Strategy:
+//   1. During setup (main thread), cache the raw GtkWidget pointer.
+//   2. All hide/show/visibility calls use raw FFI from ANY thread --
+//      bypassing the gtk-rs thread check that panics on non-main threads.
+//   3. For paste, unmap with gtk_widget_hide (gtk_window_iconify is a silent
+//      no-op on GNOME Wayland -- the ICONIFIED WM bit never appears) and
+//      verify against the real WM state (WITHDRAWN | ICONIFIED), not the
+//      GTK-internal visible flag.
+//   4. Focus is managed per session (see wayland_focus.rs): with the
+//      window-calls Shell extension we capture/restore/verify the target
+//      window before injecting the paste keystroke; without it the picker
+//      never takes focus, so the paste goes to whatever already has focus.
+// ---------------------------------------------------------------------------
+
+/// Cached raw GTK widget pointer -- set once on the main thread during setup.
+#[cfg(target_os = "linux")]
+static CACHED_GTK_WIDGET: std::sync::atomic::AtomicPtr<gtk::ffi::GtkWidget> =
+    std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+
+/// Find the Ctrl+C GTK window by iterating all toplevel windows.
+/// MUST be called from the main GTK thread.
+#[cfg(target_os = "linux")]
+fn find_our_gtk_window() -> Option<gtk::Window> {
+    use gtk::prelude::*;
+    for toplevel in gtk::Window::list_toplevels() {
+        if let Ok(win) = toplevel.dynamic_cast::<gtk::Window>() {
+            if win.title().as_deref() == Some("Ctrl+C") {
+                return Some(win);
+            }
+        }
+    }
+    None
+}
+
+/// Cache the raw GTK widget pointer. Call once during app setup (main thread).
+#[cfg(target_os = "linux")]
+fn cache_our_gtk_widget() {
+    use gtk::prelude::*;
+    if let Some(gtk_win) = find_our_gtk_window() {
+        let ptr = gtk_win.as_ptr() as *mut gtk::ffi::GtkWidget;
+        CACHED_GTK_WIDGET.store(ptr, std::sync::atomic::Ordering::Relaxed);
+        eprintln!("[GTK] Cached raw widget pointer for Ctrl+C window");
+    } else {
+        eprintln!("[GTK] WARNING: Could not find Ctrl+C GTK window during setup");
+    }
+}
+
+/// Get the cached raw widget pointer.
+#[cfg(target_os = "linux")]
+fn get_widget_ptr() -> *mut gtk::ffi::GtkWidget {
+    CACHED_GTK_WIDGET.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+// --- tauri::Window variants (command handlers, blur) ---
+
+#[cfg(target_os = "linux")]
+fn force_hide(window: &tauri::Window) {
+    let ptr = get_widget_ptr();
+    if !ptr.is_null() {
+        unsafe { gtk::ffi::gtk_widget_hide(ptr); }
+    } else {
+        let _ = window.hide();
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn force_hide(window: &tauri::Window) {
+    let _ = window.hide();
+}
+
+/// Read the raw GDK window state of the cached Ctrl+C window (Linux).
+/// Returns the GDK_WINDOW_STATE_* bitmask, or None if no window is cached.
+#[cfg(target_os = "linux")]
+fn gdk_window_state_raw() -> Option<u32> {
+    let ptr = get_widget_ptr();
+    if ptr.is_null() {
+        return None;
+    }
+    unsafe {
+        let gdk_win = gtk::ffi::gtk_widget_get_window(ptr as *mut gtk::ffi::GtkWidget);
+        if gdk_win.is_null() {
+            return None;
+        }
+        Some(gtk::gdk::ffi::gdk_window_get_state(gdk_win as *mut gtk::gdk::ffi::GdkWindow))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn gdk_window_state_raw() -> Option<u32> {
+    None
+}
+
+/// Real WM-state check: is the window unmapped (WITHDRAWN) or iconified per the
+/// compositor? `gtk_widget_get_visible()` is a GTK-internal flag and is NOT
+/// flipped by `gtk_window_iconify()`, so it cannot be used to verify iconify.
+#[cfg(target_os = "linux")]
+fn force_wm_hidden(window: &tauri::Window) -> bool {
+    match gdk_window_state_raw() {
+        Some(state) => {
+            state & (gtk::gdk::ffi::GDK_WINDOW_STATE_WITHDRAWN | gtk::gdk::ffi::GDK_WINDOW_STATE_ICONIFIED) != 0
+        }
+        None => !window.is_visible().unwrap_or(true),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn force_wm_hidden(window: &tauri::Window) -> bool {
+    !window.is_visible().unwrap_or(true)
+}
+
+/// Set the accept-focus / focus-on-map hints on the cached GTK window.
+/// While the picker is open we want keyboard focus (search/arrow-nav/Enter);
+/// the instant a selection is made we declare the window non-focus-taking so
+/// dismissal doesn't fight the compositor's focus restoration.
+#[cfg(target_os = "linux")]
+fn set_accept_focus(accept: bool) {
+    let ptr = get_widget_ptr();
+    if ptr.is_null() {
+        return;
+    }
+    let setting = accept as i32; // gboolean == c_int
+    unsafe {
+        let win = ptr as *mut gtk::ffi::GtkWindow;
+        gtk::ffi::gtk_window_set_accept_focus(win, setting);
+        gtk::ffi::gtk_window_set_focus_on_map(win, setting);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_accept_focus(_accept: bool) {}
+
+// --- WebviewWindow variants (tray/hotkey/socket handlers) ---
+
+#[cfg(target_os = "linux")]
+fn force_hide_wv(_window: &tauri::WebviewWindow) {
+    let ptr = get_widget_ptr();
+    if !ptr.is_null() {
+        unsafe { gtk::ffi::gtk_widget_hide(ptr); }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn force_hide_wv(window: &tauri::WebviewWindow) {
+    let _ = window.hide();
+}
+
+#[cfg(target_os = "linux")]
+fn force_is_visible_wv(_window: &tauri::WebviewWindow) -> bool {
+    let ptr = get_widget_ptr();
+    if !ptr.is_null() {
+        unsafe { gtk::ffi::gtk_widget_get_visible(ptr) != 0 }
+    } else {
+        true
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn force_is_visible_wv(window: &tauri::WebviewWindow) -> bool {
+    window.is_visible().unwrap_or(true)
+}
+
+// ---------------------------------------------------------------------------
+// Focus management (Linux) -- save/restore the window that had focus before
+// we showed our window, so we can return focus before simulating paste.
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "linux")]
+static SAVED_FOCUS: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+/// Save the currently focused window ID using xdotool.
+/// Called before showing the Ctrl+C window so we can restore focus later.
+#[cfg(target_os = "linux")]
+fn save_focus() {
+    let id = std::process::Command::new("xdotool")
+        .args(["getactivewindow"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string());
+
+    if let Some(id) = id {
+        let slot = SAVED_FOCUS.get_or_init(|| Mutex::new(None));
+        if let Ok(mut guard) = slot.lock() {
+            *guard = Some(id);
+        }
+    }
+}
+
+/// Restore focus to the previously saved window ID using xdotool.
+/// Returns Ok(()) if activation was sent, Err if no window was saved or
+/// xdotool failed.
+#[cfg(target_os = "linux")]
+fn restore_focus() -> Result<(), String> {
+    let slot = SAVED_FOCUS.get_or_init(|| Mutex::new(None));
+    let id = {
+        let guard = slot.lock().map_err(|e| format!("focus lock: {}", e))?;
+        guard.clone()
+    };
+    let id = id.ok_or("no saved window to restore")?;
+
+    let status = std::process::Command::new("xdotool")
+        .args(["windowactivate", "--sync", &id])
+        .status()
+        .map_err(|e| format!("xdotool windowactivate: {}", e))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("xdotool windowactivate exited {}", status))
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn get_socket_path() -> PathBuf {
     let base = dirs::runtime_dir()
@@ -25,6 +244,11 @@ fn get_socket_path() -> PathBuf {
     let dir = base.join("ctrl-c");
     let _ = fs::create_dir_all(&dir);
     dir.join("ctrl-c.sock")
+}
+
+#[cfg(target_os = "linux")]
+fn is_already_running() -> bool {
+    std::os::unix::net::UnixStream::connect(&get_socket_path()).is_ok()
 }
 
 pub fn send_toggle() {
@@ -71,11 +295,10 @@ fn start_socket_listener() {
                         if msg.starts_with("toggle") {
                             if let Some(handle) = APP_HANDLE.get() {
                                 if let Some(window) = handle.get_webview_window("main") {
-                                    if window.is_visible().unwrap_or(false) {
-                                        let _ = window.hide();
+                                    if force_is_visible_wv(&window) {
+                                        force_hide_wv(&window);
                                     } else {
-                                        let _ = window.show();
-                                        let _ = window.set_focus();
+                                        show_window(handle);
                                     }
                                 }
                             }
@@ -125,14 +348,35 @@ fn get_app_names(state: State<'_, Arc<Database>>) -> Result<Vec<String>, String>
     state.get_app_names()
 }
 
+/// Report how paste focus is managed on this session:
+/// `"x11"` (xdotool focus restore), `"extension"` (window-calls extension),
+/// or `"no-focus"` (no extension: picker never takes focus, mouse-only).
+#[tauri::command]
+fn get_focus_mode() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        if !hotkey::is_wayland() {
+            return "x11".to_string();
+        }
+        match wayland_focus::mode() {
+            wayland_focus::FocusMode::Extension => "extension".to_string(),
+            wayland_focus::FocusMode::NoExtension => "no-focus".to_string(),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        "x11".to_string()
+    }
+}
+
 #[tauri::command]
 fn delete_entry(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> {
     state.delete_entry(id)
 }
 
 #[tauri::command]
-fn clear_all(state: State<'_, Arc<Database>>, monitor: State<'_, ClipboardMonitor>) -> Result<(), String> {
-    state.clear_all()?;
+fn clear_all(state: State<'_, Arc<Database>>, monitor: State<'_, ClipboardMonitor>, keep_pinned: bool) -> Result<(), String> {
+    state.clear_all(keep_pinned)?;
     if let Ok(mut clip) = arboard::Clipboard::new() {
         if let Ok(t) = clip.get_text() {
             if !t.trim().is_empty() {
@@ -179,10 +423,11 @@ fn get_config(state: State<'_, Mutex<Config>>) -> Result<Config, String> {
 }
 
 #[tauri::command]
-fn save_config(state: State<'_, Mutex<Config>>, config: Config) -> Result<(), String> {
+fn save_config(state: State<'_, Mutex<Config>>, db: State<'_, Arc<Database>>, config: Config) -> Result<(), String> {
     config::save_config(&config)?;
     let mut stored = state.lock().map_err(|e| e.to_string())?;
-    *stored = config;
+    *stored = config.clone();
+    db.set_max_entries(config.behavior.max_entries as i64);
     Ok(())
 }
 
@@ -303,29 +548,9 @@ fn is_autostart_enabled() -> Result<bool, String> {
     autostart::is_autostart_enabled()
 }
 
-#[cfg(target_os = "windows")]
-fn simulate_paste() {
-    unsafe {
-        use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
-        const VK_CONTROL: u16 = 0x11;
-        const VK_V: u16 = 0x56;
-        keybd_event(VK_CONTROL as u8, 0, 0, 0);
-        keybd_event(VK_V as u8, 0, 0, 0);
-        std::thread::sleep(std::time::Duration::from_millis(15));
-        keybd_event(VK_V as u8, 0, KEYEVENTF_KEYUP, 0);
-        keybd_event(VK_CONTROL as u8, 0, KEYEVENTF_KEYUP, 0);
-    }
+fn simulate_paste(text: &str, key: paste::PasteKey) -> Result<(), String> {
+    paste::simulate_paste(text, key)
 }
-
-#[cfg(target_os = "linux")]
-fn simulate_paste() {
-    let _ = std::process::Command::new("xdotool")
-        .args(["key", "ctrl+v"])
-        .spawn();
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn simulate_paste() {}
 
 fn get_foreground_app() -> String {
     #[cfg(target_os = "windows")]
@@ -393,7 +618,11 @@ fn get_foreground_app() -> String {
 }
 
 #[tauri::command]
-fn copy_and_paste(text: String, monitor: State<'_, ClipboardMonitor>, window: tauri::Window) -> Result<(), String> {
+fn copy_and_paste(
+    text: String,
+    monitor: State<'_, ClipboardMonitor>,
+    window: tauri::Window,
+) -> Result<(), String> {
     // Set dedup flags BEFORE writing to clipboard to prevent the polling interval
     // from detecting the new text as a new entry in the race window
     if let Ok(mut last) = monitor.last_content.lock() {
@@ -402,13 +631,142 @@ fn copy_and_paste(text: String, monitor: State<'_, ClipboardMonitor>, window: ta
     if let Ok(mut app) = monitor.last_app_copy.lock() {
         *app = Some(text.clone());
     }
-    let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    clip.set_text(&text).map_err(|e| e.to_string())?;
+    let mut clip = arboard::Clipboard::new().map_err(|e| format!("clipboard.new FAILED: {}", e))?;
+    clip.set_text(&text).map_err(|e| format!("clipboard.write FAILED: {}", e))?;
     drop(clip);
-    let _ = window.hide();
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    simulate_paste();
+    hide_and_paste(&window, &text);
     Ok(())
+}
+
+fn show_window(app: &tauri::AppHandle) {
+    #[cfg(target_os = "linux")]
+    let mode = wayland_focus::mode();
+    #[cfg(not(target_os = "linux"))]
+    let mode = wayland_focus::FocusMode::NoExtension;
+
+    #[cfg(target_os = "linux")]
+    {
+        if hotkey::is_wayland() {
+            match mode {
+                wayland_focus::FocusMode::Extension => {
+                    // Extension present: the picker may take focus for keyboard
+                    // nav; capture the target BEFORE it loses focus.
+                    set_accept_focus(true);
+                    wayland_focus::save_current_focus();
+                }
+                wayland_focus::FocusMode::NoExtension => {
+                    // No extension: the picker must never take focus, so the
+                    // target keeps it and paste goes to the right place.
+                    set_accept_focus(false);
+                }
+            }
+        } else {
+            // X11: xdotool can read/write focus directly.
+            save_focus();
+            set_accept_focus(true);
+        }
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        #[cfg(target_os = "linux")]
+        let take_focus =
+            !hotkey::is_wayland() || mode == wayland_focus::FocusMode::Extension;
+        #[cfg(not(target_os = "linux"))]
+        let take_focus = true;
+        if take_focus {
+            let _ = window.set_focus();
+        }
+        let _ = app.emit("hotkey-show", ());
+    }
+}
+
+/// Pick the paste keystroke for the current target window. In window-calls
+/// extension mode we know the target's WM_CLASS: terminals get Ctrl+Shift+V,
+/// other GUI apps get Ctrl+V. Everywhere else the target is unknown and we
+/// keep the universal Shift+Insert.
+#[cfg(target_os = "linux")]
+fn paste_key_for_target(is_wayland: bool) -> paste::PasteKey {
+    if is_wayland && wayland_focus::mode() == wayland_focus::FocusMode::Extension {
+        if let Some(t) = wayland_focus::target() {
+            if paste::looks_like_terminal(&t.wm_class)
+                || paste::looks_like_terminal(&t.wm_class_instance)
+            {
+                return paste::PasteKey::CtrlShiftV;
+            }
+            return paste::PasteKey::CtrlV;
+        }
+    }
+    paste::PasteKey::ShiftInsert
+}
+
+#[cfg(not(target_os = "linux"))]
+fn paste_key_for_target(_is_wayland: bool) -> paste::PasteKey {
+    paste::PasteKey::CtrlV
+}
+
+fn hide_and_paste(window: &tauri::Window, text: &str) {
+    #[cfg(target_os = "linux")]
+    let is_wayland = hotkey::is_wayland();
+    #[cfg(not(target_os = "linux"))]
+    let is_wayland = false;
+
+    // Decide the keystroke before hiding, while the target is still known.
+    let key = paste_key_for_target(is_wayland);
+
+    // Dynamic accept-focus: while the picker is open we keep keyboard focus so
+    // search/arrow-nav/Enter work. The instant a selection is made we disable
+    // accept-focus so the window is not a focus candidate during dismissal --
+    // this declares to Mutter that focus must go elsewhere once we unmap.
+    if is_wayland {
+        set_accept_focus(false);
+    }
+
+    // Unmap with gtk_widget_hide. On this setup gtk_window_iconify is a silent
+    // no-op (verified via the WM-state poll: the ICONIFIED bit never appears),
+    // while hide() properly transitions the surface to WITHDRAWN. Verification
+    // below uses the REAL WM state, not gtk_widget_get_visible().
+    force_hide(window);
+
+    // Poll real WM state -- wait up to 400ms for the surface to unmap
+    // (GDK_WINDOW_STATE_WITHDRAWN / ICONIFIED).
+    for _ in 1..=20 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        if force_wm_hidden(window) {
+            break;
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if is_wayland {
+            match wayland_focus::mode() {
+                wayland_focus::FocusMode::Extension => {
+                    // Restore focus to the captured target via window-calls,
+                    // then wait for it to actually take focus before pasting.
+                    if let Ok(t) = wayland_focus::restore_focus() {
+                        for _ in 0..20 {
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                            if wayland_focus::verify_focus(t.id) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                wayland_focus::FocusMode::NoExtension => {
+                    // The picker never took focus, so the target still has it.
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+        } else {
+            let _ = restore_focus();
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        }
+    }
+
+    if let Err(msg) = simulate_paste(text, key) {
+        let _ = window.emit("paste-error", &msg);
+    }
 }
 
 fn rgba_to_png_thumbnail(raw_rgba: &[u8], w: u32, h: u32, max_w: u32, max_h: u32) -> Result<Vec<u8>, String> {
@@ -478,9 +836,7 @@ fn copy_image_and_paste(
     };
     clip.set_image(img_data).map_err(|e| e.to_string())?;
     drop(clip);
-    let _ = window.hide();
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    simulate_paste();
+    hide_and_paste(&window, "");
     Ok(())
 }
 
@@ -635,6 +991,7 @@ pub fn run() {
     let db_path_str = db_path.to_string_lossy().to_string();
     let db = Arc::new(Database::new(&db_path_str).expect("Failed to initialize database"));
     let loaded_config = config::load_config();
+    db.set_max_entries(loaded_config.behavior.max_entries as i64);
     let is_locked = loaded_config.private_mode_locked;
     let monitor = ClipboardMonitor::new();
 
@@ -672,6 +1029,12 @@ pub fn run() {
     let config = Mutex::new(loaded_config);
 
     #[cfg(target_os = "linux")]
+    if is_already_running() {
+        eprintln!("Ctrl+C is already running");
+        std::process::exit(0);
+    }
+
+    #[cfg(target_os = "linux")]
     start_socket_listener();
 
     tauri::Builder::default()
@@ -681,12 +1044,10 @@ pub fn run() {
                 .with_handler(|app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
                         if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
+                            if force_is_visible_wv(&window) {
+                                force_hide_wv(&window);
                             } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                                let _ = app.emit("hotkey-show", ());
+                                show_window(app);
                             }
                         }
                     }
@@ -698,6 +1059,17 @@ pub fn run() {
         .manage(monitor)
         .setup(|app| {
             let _ = APP_HANDLE.set(app.handle().clone());
+
+            #[cfg(target_os = "linux")]
+            {
+                cache_our_gtk_widget();
+                let focus_mode = wayland_focus::init();
+                if hotkey::is_wayland() && focus_mode == wayland_focus::FocusMode::NoExtension {
+                    // Picker must never take focus on no-extension Wayland.
+                    set_accept_focus(false);
+                }
+            }
+
             use tauri::menu::{MenuBuilder, MenuItemBuilder};
             use tauri::tray::TrayIconBuilder;
 
@@ -718,7 +1090,7 @@ pub fn run() {
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Ctrl+C — Clipboard Manager")
+                .tooltip("Ctrl+C -- Clipboard Manager")
                 .menu(&menu)
                 .on_tray_icon_event(|tray, event| {
                     use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
@@ -730,12 +1102,10 @@ pub fn run() {
                     {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
+                            if force_is_visible_wv(&window) {
+                                force_hide_wv(&window);
                             } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                                let _ = app.emit("hotkey-show", ());
+                                show_window(app);
                             }
                         }
                     }
@@ -744,12 +1114,10 @@ pub fn run() {
                     match event.id().as_ref() {
                         "show_hide" => {
                             if let Some(window) = app.get_webview_window("main") {
-                                if window.is_visible().unwrap_or(false) {
-                                    let _ = window.hide();
+                                if force_is_visible_wv(&window) {
+                                    force_hide_wv(&window);
                                 } else {
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
-                                    let _ = app.emit("hotkey-show", ());
+                                    show_window(app);
                                 }
                             }
                         }
@@ -812,7 +1180,7 @@ pub fn run() {
             if let tauri::WindowEvent::Focused(false) = event {
                 let monitor: State<'_, ClipboardMonitor> = window.state();
                 if !monitor.ignore_blur.load(Ordering::Relaxed) {
-                    let _ = window.hide();
+                    force_hide(window);
                 }
             }
         })
@@ -842,6 +1210,7 @@ pub fn run() {
             set_ignore_blur,
             register_hotkey,
             get_app_names,
+            get_focus_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

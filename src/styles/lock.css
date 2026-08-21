@@ -5,11 +5,9 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  background: var(--bg-modal);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  z-index: 100;
+  gap: 14px;
+  background: var(--bg-primary);
+  z-index: var(--z-overlay);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s ease;
@@ -21,12 +19,12 @@
 }
 
 .lock-icon {
-  opacity: 0.5;
-  margin-bottom: 4px;
+  opacity: 0.6;
+  margin-bottom: 2px;
 }
 
 .lock-title {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -35,27 +33,28 @@
   font-size: 13px;
   color: var(--text-secondary);
   text-align: center;
-  max-width: 240px;
-  line-height: 1.4;
+  max-width: 260px;
+  line-height: 1.5;
 }
 
 .lock-input {
-  width: 200px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  width: 220px;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-sm);
   background: var(--bg-secondary);
   color: var(--text-primary);
   font-family: var(--font-family);
   font-size: 14px;
   outline: none;
   text-align: center;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .lock-input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.2);
 }
 
 .lock-input::placeholder {
@@ -69,24 +68,24 @@
 }
 
 .lock-btn {
-  padding: 8px 24px;
+  padding: 9px 28px;
   border: none;
-  border-radius: 8px;
-  background: var(--accent);
-  color: white;
+  border-radius: var(--radius-sm);
+  background: var(--accent-hover);
+  color: #fff;
   font-family: var(--font-family);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s ease, opacity 0.2s ease;
+  transition: background 0.2s ease, transform 0.1s ease;
 }
 
 .lock-btn:hover {
-  background: var(--accent-hover);
+  background: var(--accent);
 }
 
 .lock-btn:active {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .lock-error {
