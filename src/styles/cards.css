@@ -430,6 +430,17 @@
   align-items: center;
   gap: 8px;
   padding: 16px 4px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-divider:hover .group-label {
+  color: var(--text-primary);
+}
+
+.group-divider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .group-divider::after {
@@ -447,6 +458,7 @@
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.14em;
+  transition: color 0.15s ease;
 }
 
 .group-count {
@@ -457,6 +469,19 @@
   padding: 1px 7px;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
+}
+
+.group-chevron {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+}
+
+.group-divider.collapsed .group-chevron {
+  transform: rotate(-90deg);
 }
 
 /* ---- Skeleton loading ---- */

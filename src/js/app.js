@@ -1,5 +1,6 @@
 (async () => {
   const config = await window.theme.load();
+  window.ui.setCollapsedGroups(config?.collapsed_groups || []);
 
   async function loadEntries(query, filter) {
     try {
@@ -194,7 +195,7 @@
   }
 
   document.addEventListener('keydown', async (e) => {
-    const cards = cardList.querySelectorAll('.clip-card');
+    const cards = cardList.querySelectorAll('.clip-card:not([hidden])');
     const searchInput = document.getElementById('search-input');
 
     // Escape: close overlays or hide to tray
@@ -949,7 +950,7 @@
       document.getElementById('theme-overlay')?.classList.remove('visible');
       window.ui.hideFilterPanel();
 
-      const cards = cardList.querySelectorAll('.clip-card');
+      const cards = cardList.querySelectorAll('.clip-card:not([hidden])');
       if (cards.length > 0) {
         selectedIndex = 0;
         selectCard(cards, 0);

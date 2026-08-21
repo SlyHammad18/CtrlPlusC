@@ -4,6 +4,28 @@
 
 ---
 
+## [Feature] — Collapsible Group Sections (Pinned / Today / Yesterday / This Week…) — 2026-08-21
+
+### ✅ What Changed
+- **Group dividers are now collapsible:** clicking a divider (Pinned, Today, Yesterday, This Week, Last Week, Older) toggles its section; chevron rotates; hover/focus-visible states added.
+- **State persists across restarts:** new `collapsed_groups: Vec<String>` in `config.toml` (`[serde(default)]`), saved via new `set_collapsed_groups` Tauri command (updates in-memory config + writes to disk); frontend seeds from config at startup and saves on every toggle.
+- **Refactor:** shared `makeDivider(label, count)` helper now used by both `renderEntries` and `prependCard` (previously duplicated inline divider construction); `applyGroupCollapse()` walks siblings until the next divider to hide/show cards.
+- **Keyboard nav skips hidden cards:** arrow-key navigation and hotkey-show focus now query `.clip-card:not([hidden])`, so collapsed entries are not focused.
+- New cards inserted into a collapsed group (via `prependCard`) stay hidden until the group is expanded.
+- Footer entry count still reports totals including collapsed entries.
+
+### ⏭️ What Was Not Changed
+- Search/filter behavior: full re-render re-applies whatever collapse state is set (no force-expand during search).
+- No release cut — code change only (per request).
+
+### ❌ Errors Faced
+- None. `cargo check` clean; `cargo test --lib` 36/37 (1 pre-existing environmental `hotkey::tests::test_wayland_not_set`); all JS passes `node --check`. Added config tests for `collapsed_groups` roundtrip + default-when-missing.
+
+### 📝 Notes
+- Collapse state is keyed by group label; labels are stable across sessions.
+
+---
+
 ## [Release] — v0.2.0 Published (.deb + .tar.gz) — 2026-08-21
 
 ### ✅ What Changed

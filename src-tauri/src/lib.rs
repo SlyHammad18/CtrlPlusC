@@ -423,6 +423,13 @@ fn get_config(state: State<'_, Mutex<Config>>) -> Result<Config, String> {
 }
 
 #[tauri::command]
+fn set_collapsed_groups(state: State<'_, Mutex<Config>>, groups: Vec<String>) -> Result<(), String> {
+    let mut cfg = state.lock().map_err(|e| e.to_string())?;
+    cfg.collapsed_groups = groups;
+    config::save_config(&cfg)
+}
+
+#[tauri::command]
 fn save_config(state: State<'_, Mutex<Config>>, db: State<'_, Arc<Database>>, config: Config) -> Result<(), String> {
     config::save_config(&config)?;
     let mut stored = state.lock().map_err(|e| e.to_string())?;
@@ -1211,6 +1218,7 @@ pub fn run() {
             register_hotkey,
             get_app_names,
             get_focus_mode,
+            set_collapsed_groups,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
