@@ -87,6 +87,75 @@ window.ui = (() => {
   const cardList = document.getElementById('card-list');
   const emptyState = document.getElementById('empty-state');
 
+  let collapsedGroups = new Set();
+
+  function setCollapsedGroups(labels) {
+    collapsedGroups = new Set(Array.isArray(labels) ? labels : []);
+  }
+
+  function persistCollapsedGroups() {
+    window.api?.setCollapsedGroups?.([...collapsedGroups])?.catch?.(() => {});
+  }
+
+  function applyGroupCollapse(divider) {
+    const labelEl = divider.querySelector('.group-label');
+    if (!labelEl) return;
+    const collapsed = collapsedGroups.has(labelEl.textContent);
+    divider.classList.toggle('collapsed', collapsed);
+    divider.setAttribute('aria-expanded', String(!collapsed));
+    let el = divider.nextElementSibling;
+    while (el && !el.classList.contains('group-divider')) {
+      if (el.classList.contains('clip-card')) el.hidden = collapsed;
+      el = el.nextElementSibling;
+    }
+  }
+
+  function toggleGroup(divider) {
+    const labelEl = divider.querySelector('.group-label');
+    if (!labelEl) return;
+    const label = labelEl.textContent;
+    if (collapsedGroups.has(label)) {
+      collapsedGroups.delete(label);
+    } else {
+      collapsedGroups.add(label);
+    }
+    applyGroupCollapse(divider);
+    persistCollapsedGroups();
+  }
+
+  function makeDivider(label, count) {
+    const divider = document.createElement('div');
+    divider.className = 'group-divider';
+    divider.setAttribute('role', 'button');
+    divider.setAttribute('tabindex', '0');
+    divider.setAttribute('aria-expanded', 'true');
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'group-label';
+    labelEl.textContent = label;
+    divider.appendChild(labelEl);
+
+    const countEl = document.createElement('span');
+    countEl.className = 'group-count';
+    countEl.textContent = count;
+    divider.appendChild(countEl);
+
+    const chevron = document.createElement('span');
+    chevron.className = 'group-chevron';
+    chevron.textContent = '▾';
+    chevron.setAttribute('aria-hidden', 'true');
+    divider.appendChild(chevron);
+
+    divider.addEventListener('click', () => toggleGroup(divider));
+    divider.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleGroup(divider);
+      }
+    });
+    return divider;
+  }
+
   function getGroupLabel(date) {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -285,19 +354,12 @@ window.ui = (() => {
 
     const fragment = document.createDocumentFragment();
     groups.forEach((group) => {
-      const divider = document.createElement('div');
-      divider.className = 'group-divider';
-      const label = document.createElement('span');
-      label.className = 'group-label';
-      label.textContent = group.label;
-      divider.appendChild(label);
-      const count = document.createElement('span');
-      count.className = 'group-count';
-      count.textContent = group.items.length;
-      divider.appendChild(count);
+      const divider = makeDivider(group.label, group.items.length);
       fragment.appendChild(divider);
       group.items.forEach((entry) => {
-        fragment.appendChild(createCard(entry, query));
+        const card = createCard(entry, query);
+        if (collapsedGroups.has(group.label)) card.hidden = true;
+        fragment.appendChild(card);
       });
     });
     cardList.appendChild(fragment);
@@ -337,6 +399,7 @@ window.ui = (() => {
     for (const div of dividers) {
       const span = div.querySelector('.group-label');
       if (span && span.textContent === targetLabel) {
+        if (collapsedGroups.has(targetLabel)) card.hidden = true;
         cardList.insertBefore(card, div.nextSibling);
         const count = div.querySelector('.group-count');
         if (count) count.textContent = parseInt(count.textContent || '0', 10) + 1;
@@ -358,16 +421,7 @@ window.ui = (() => {
           }
         }
       }
-      const newDivider = document.createElement('div');
-      newDivider.className = 'group-divider';
-      const newLabel = document.createElement('span');
-      newLabel.className = 'group-label';
-      newLabel.textContent = targetLabel;
-      newDivider.appendChild(newLabel);
-      const newCount = document.createElement('span');
-      newCount.className = 'group-count';
-      newCount.textContent = '1';
-      newDivider.appendChild(newCount);
+      const newDivider = makeDivider(targetLabel, '1');
       if (refNode) {
         cardList.insertBefore(newDivider, refNode);
         cardList.insertBefore(card, refNode);
@@ -375,6 +429,7 @@ window.ui = (() => {
         cardList.appendChild(newDivider);
         cardList.appendChild(card);
       }
+      applyGroupCollapse(newDivider);
     }
 
     updateCount();
@@ -750,5 +805,5 @@ window.ui = (() => {
     closeFilterPanel();
   }
 
-  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showClearAllDialog, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit, showFilterPanel, hideFilterPanel, updateFilterBadge, renderFilterList, showLoading, flashCopied, updateCount };
+  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showClearAllDialog, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit, showFilterPanel, hideFilterPanel, updateFilterBadge, renderFilterList, showLoading, flashCopied, updateCount, setCollapsedGroups };
 })();
