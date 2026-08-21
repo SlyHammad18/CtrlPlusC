@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.1.0">
+  <a href="https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.2.0">
     <img src="https://img.shields.io/github/v/release/SlyHammad18/CtrlPlusC?style=for-the-badge&logo=github&label=Download" alt="Download" />
   </a>
 </p>
@@ -44,17 +44,17 @@ Built with **Tauri v2** (Rust backend + Vanilla JS frontend) for a tiny memory f
 
 ### Windows
 
-Download the [latest MSI installer](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.1.0) and run it.
+Download the [latest MSI installer](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.2.0) and run it.
 
 ```
-Ctrl+C_0.1.0_x64_en-US.msi
+Ctrl+C_0.2.0_x64_en-US.msi
 ```
 
 The app requires **WebView2** (pre-installed on Windows 10+).
 
 ### Linux
 
-Download the `.deb` or `.tar.gz` from the [latest release](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.1.0).
+Download the `.deb` or `.tar.gz` from the [latest release](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.2.0).
 
 **Dependencies:**
 - **Arch:** `webkit2gtk`, `libappindicator-gtk3`
@@ -80,7 +80,7 @@ To change the hotkey, open Settings → click the hotkey display → press your 
 
 > **Wayland note:** Global shortcuts depend on your desktop environment. On GNOME/KDE, the app attempts the `xdg-desktop-portal` GlobalShortcuts interface. If unavailable, you'll need to configure a custom keybind in your DE settings to run `ctrl-c toggle`.
 >
-> **Auto-paste note:** Auto-paste simulates Ctrl+V after copying. It needs `xdotool` on X11 or `wtype` on Wayland (`sudo apt install xdotool` / `sudo apt install wtype`). If the tool is missing, the entry is still copied to the clipboard and a toast explains what to install.
+> **Auto-paste note:** Auto-paste simulates a paste keystroke after copying. On X11 it uses `xdotool`; on Wayland it tries `ydotool`, then native uinput (requires the `input` group), then `wtype`. In terminals it sends `Ctrl+Shift+V` automatically. If every method is unavailable, the entry is still copied to the clipboard and a toast explains what to install.
 
 ### Keyboard Shortcuts
 
