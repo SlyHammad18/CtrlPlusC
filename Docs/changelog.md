@@ -4,6 +4,26 @@
 
 ---
 
+## [Release] — v0.2.0 Published (.deb + .tar.gz) — 2026-08-21
+
+### ✅ What Changed
+- Version bumped `0.1.0 → 0.2.0` in `tauri.conf.json` + `Cargo.toml` (PR #2); README download links updated to v0.2.0; auto-paste note rewritten for the new Wayland backend chain.
+- Built release via `npm run tauri build`: `Ctrl+C_0.2.0_amd64.deb` (5.3 MB) from the deb bundle target.
+- Assembled `Ctrl+C_0.2.0_amd64.tar.gz` (5.1 MB) replicating the v0.1.0 layout: `ctrl-c-v0.2.0/{ctrl-c, ctrl-c.png (512×512), Ctrl+C.desktop, install.sh, README.txt}` — install.sh echo updated to v0.2.0; README.txt documents runtime deps, optional auto-paste deps (xdotool/ydotool/wtype/uinput), and the Window Calls extension recommendation.
+- Tagged `v0.2.0` on main (`0f42274`) and published [GitHub release](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.2.0) with both assets.
+
+### ⏭️ What Was Not Changed
+- Windows MSI not included (cannot cross-build on Linux without a cross-compilation setup).
+- deb `Depends` left as-is (xdotool retained for X11 users; Wayland paste tools are optional runtime fallbacks).
+
+### ❌ Errors Faced
+- None — build clean in 2m50s, deb metadata verified (`Version: 0.2.0`, correct Depends).
+
+### 📝 Notes
+- Release notes drafted from the two Wayland-focus changelog entries above.
+
+---
+
 ## [Cleanup] — Debug Overlay & Trace Logging Removed; Extension Mode Confirmed Working — 2026-08-21
 
 ### ✅ What Changed
