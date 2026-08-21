@@ -17,9 +17,17 @@ window.theme = (() => {
     root.style.setProperty('--border', t.border);
     root.style.setProperty('--border-card', t.border_card);
     root.style.setProperty('--border-radius', t.border_radius);
-    const font = t.font_family && !t.font_family.startsWith('#') ? t.font_family : 'Inter, system-ui, sans-serif';
+    const font = t.font_family && !t.font_family.startsWith('#') ? t.font_family : 'Geist, Inter, system-ui, sans-serif';
     root.style.setProperty('--font-family', font);
     root.style.setProperty('--font-size', t.font_size);
+
+    const accent = t.accent;
+    if (accent && /^#[0-9a-fA-F]{6}$/.test(accent)) {
+      const r = parseInt(accent.slice(1, 3), 16);
+      const g = parseInt(accent.slice(3, 5), 16);
+      const b = parseInt(accent.slice(5, 7), 16);
+      root.style.setProperty('--accent-rgb', `${r} ${g} ${b}`);
+    }
   }
 
   async function load() {

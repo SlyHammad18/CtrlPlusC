@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,6 +18,7 @@ pub struct Entry {
 
 pub struct Database {
     conn: Mutex<Connection>,
+    max_entries: AtomicI64,
 }
 
 impl Database {
@@ -24,6 +26,7 @@ impl Database {
         let conn = Connection::open(path).map_err(|e| e.to_string())?;
         let db = Database {
             conn: Mutex::new(conn),
+            max_entries: AtomicI64::new(0),
         };
         db.migrate()?;
         Ok(db)
@@ -34,9 +37,14 @@ impl Database {
         let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
         let db = Database {
             conn: Mutex::new(conn),
+            max_entries: AtomicI64::new(0),
         };
         db.migrate()?;
         Ok(db)
+    }
+
+    pub fn set_max_entries(&self, max_entries: i64) {
+        self.max_entries.store(max_entries, Ordering::Relaxed);
     }
 
     fn migrate(&self) -> Result<(), String> {
@@ -129,7 +137,7 @@ impl Database {
         };
 
         drop(conn);
-        self.cleanup(100)?;
+        self.cleanup(self.max_entries.load(Ordering::Relaxed))?;
 
         Ok(entry)
     }
@@ -184,7 +192,11 @@ impl Database {
             }
         }
 
-        sql.push_str(" ORDER BY is_pinned DESC, timestamp DESC LIMIT 100");
+        sql.push_str(" ORDER BY is_pinned DESC, timestamp DESC");
+        let max_entries = self.max_entries.load(Ordering::Relaxed);
+        if max_entries > 0 {
+            sql.push_str(&format!(" LIMIT {}", max_entries));
+        }
 
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
@@ -294,9 +306,13 @@ impl Database {
         Ok(())
     }
 
-    pub fn clear_all(&self) -> Result<(), String> {
+    pub fn clear_all(&self, keep_pinned: bool) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute("DELETE FROM entries", []).map_err(|e| e.to_string())?;
+        if keep_pinned {
+            conn.execute("DELETE FROM entries WHERE is_pinned = 0", []).map_err(|e| e.to_string())?;
+        } else {
+            conn.execute("DELETE FROM entries", []).map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
@@ -310,7 +326,10 @@ impl Database {
         Ok(())
     }
 
-    fn cleanup(&self, max_entries: usize) -> Result<(), String> {
+    fn cleanup(&self, max_entries: i64) -> Result<(), String> {
+        if max_entries <= 0 {
+            return Ok(());
+        }
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "DELETE FROM entries WHERE id IN (
@@ -319,7 +338,7 @@ impl Database {
                 ORDER BY timestamp ASC
                 LIMIT MAX(0, (SELECT COUNT(*) - ?1 FROM entries))
             )",
-            params![max_entries as i64],
+            params![max_entries],
         )
         .map_err(|e| e.to_string())?;
         Ok(())
@@ -444,6 +463,46 @@ mod tests {
         assert_eq!(entries.len(), 100);
         let pinned_count = entries.iter().filter(|e| e.is_pinned).count();
         assert_eq!(pinned_count, 15);
+    }
+
+    #[test]
+    fn test_unlimited_max_entries() {
+        let db = Database::new_in_memory().unwrap();
+        db.set_max_entries(0);
+        for i in 0..150 {
+            db.add_entry(&format!("entry {}", i), false).unwrap();
+        }
+        let entries = db.get_entries(None, None, None).unwrap();
+        assert_eq!(entries.len(), 150);
+    }
+
+    #[test]
+    fn test_capped_max_entries() {
+        let db = Database::new_in_memory().unwrap();
+        db.set_max_entries(50);
+        for i in 0..75 {
+            db.add_entry(&format!("entry {}", i), false).unwrap();
+        }
+        let entries = db.get_entries(None, None, None).unwrap();
+        assert_eq!(entries.len(), 50);
+    }
+
+    #[test]
+    fn test_clear_all_keeps_pinned() {
+        let db = Database::new_in_memory().unwrap();
+        let pinned = db.add_entry("pinned one", false).unwrap();
+        db.toggle_pin(pinned.id).unwrap();
+        db.add_entry("unpinned one", false).unwrap();
+        db.add_entry("unpinned two", false).unwrap();
+
+        db.clear_all(true).unwrap();
+        let entries = db.get_entries(None, None, None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].is_pinned);
+
+        db.clear_all(false).unwrap();
+        let entries = db.get_entries(None, None, None).unwrap();
+        assert!(entries.is_empty());
     }
 
     #[test]

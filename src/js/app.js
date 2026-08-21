@@ -21,12 +21,20 @@
       const entries = await window.api.getEntries(null, null);
       const entry = entries.find((e) => e.id === id);
       if (!entry) return;
-      if (entry.content_type === 'image') {
-        await window.api.copyImageAndPaste(id);
-        window.ui.showToast('Image copied to clipboard');
-      } else {
-        await window.api.copyAndPaste(entry.content);
-        window.ui.showToast('Copied to clipboard');
+      // Prevent the blur handler from hiding the window before hide_and_paste does.
+      await window.api.setIgnoreBlur(true);
+      try {
+        if (entry.content_type === 'image') {
+          await window.api.copyImageAndPaste(id);
+          window.ui.flashCopied(id);
+          window.ui.showToast('Image copied to clipboard');
+        } else {
+          await window.api.copyAndPaste(entry.content);
+          window.ui.flashCopied(id);
+          window.ui.showToast('Copied to clipboard');
+        }
+      } finally {
+        await window.api.setIgnoreBlur(false);
       }
     } catch (err) {
       console.error('Copy failed:', err);
@@ -432,7 +440,8 @@
         const ok = await window.api.unlockPrivateMode(password);
         if (ok) {
           window.ui.hideLockScreen();
-          await loadEntries('', 'all');
+  window.ui.showLoading();
+  await loadEntries('', 'all');
         } else {
           window.ui.setLockError('Wrong password');
           window.ui.lockShake();
@@ -448,8 +457,7 @@
   let monitoring = true;
   const btnStop = document.getElementById('btn-stop');
   const recordDot = document.getElementById('record-dot');
-  const stopIcon = document.getElementById('stop-icon');
-  const playIcon = document.getElementById('play-icon');
+  const recordLabel = document.getElementById('record-label');
 
   btnStop?.addEventListener('click', async () => {
     monitoring = !monitoring;
@@ -457,8 +465,7 @@
       await window.api.setMonitoring(monitoring);
       btnStop.title = monitoring ? 'Stop recording' : 'Start recording';
       if (recordDot) recordDot.classList.toggle('paused', !monitoring);
-      if (stopIcon) stopIcon.style.display = monitoring ? '' : 'none';
-      if (playIcon) playIcon.style.display = monitoring ? 'none' : '';
+      if (recordLabel) recordLabel.textContent = monitoring ? 'REC' : 'PAUSED';
     } catch (err) {
       monitoring = !monitoring;
       console.error('Toggle monitoring failed:', err);
@@ -542,6 +549,8 @@
 
       const currentFont = cfg.theme?.font_family;
       document.getElementById('setting-font').value = (currentFont && !currentFont.startsWith('#')) ? currentFont : 'Inter, system-ui, sans-serif';
+
+      document.getElementById('setting-max-entries').value = cfg.behavior?.max_entries ?? 0;
 
       _privateModeStatus = await window.api.getPrivateModeStatus();
       const pwBtn = document.getElementById('btn-settings-password');
@@ -666,6 +675,28 @@
     }
   });
 
+  document.getElementById('setting-max-entries')?.addEventListener('blur', async (e) => {
+    let val = parseInt(e.target.value, 10);
+    if (Number.isNaN(val) || val < 0) val = 0;
+    e.target.value = val;
+    try {
+      const cfg = await window.api.getConfig();
+      cfg.behavior = cfg.behavior || {};
+      cfg.behavior.max_entries = val;
+      await window.api.saveConfig(cfg);
+      window.ui.showToast(val === 0 ? 'Unlimited history' : `History limited to ${val}`);
+    } catch (err) {
+      console.error('Max entries save failed:', err);
+    }
+  });
+
+  document.getElementById('setting-max-entries')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.target.blur();
+    }
+  });
+
   document.getElementById('btn-settings-password')?.addEventListener('click', () => {
     window.ui.hideSettings();
     if (_privateModeStatus && _privateModeStatus.has_password) {
@@ -702,63 +733,63 @@
 
   const presets = [
     {
+      name: 'Graphite',
+      theme: {
+        bg_primary: '#0B0D12', bg_secondary: '#12151D', bg_card: '#171B24',
+        text_primary: '#F1F4F9', text_secondary: '#9AA4B2',
+        accent: '#4E8AFF', accent_hover: '#3D72E8',
+        danger: '#E5484D', success: '#2FB58A', border: '#1F2430',
+        bg_modal: '#141822', border_card: '#262D3B', accent_subtle: '#182A4D',
+      },
+    },
+    {
       name: 'Void Purple',
       theme: {
-        bg_primary: '#0A0612', bg_secondary: '#120D1F', bg_card: '#1C1530',
-        text_primary: '#EDE9FE', text_secondary: '#9B8FC0',
-        accent: '#7C3AED', accent_hover: '#6D28D9',
-        danger: '#F87171', success: '#34D399', border: '#2A1F45',
-        bg_modal: '#160F28', border_card: '#2E2250', accent_subtle: '#1E1040',
+        bg_primary: '#0E0A18', bg_secondary: '#161127', bg_card: '#1C1631',
+        text_primary: '#EFEAFB', text_secondary: '#A79BC9',
+        accent: '#8B5CF6', accent_hover: '#7C3AED',
+        danger: '#F87171', success: '#34D399', border: '#241C3E',
+        bg_modal: '#181329', border_card: '#2E2450', accent_subtle: '#241A4A',
       },
     },
     {
       name: 'Synthwave',
       theme: {
-        bg_primary: '#0F0817', bg_secondary: '#180E26', bg_card: '#221438',
-        text_primary: '#FFD6EE', text_secondary: '#C07FA0',
-        accent: '#FF2D9B', accent_hover: '#E0187F',
+        bg_primary: '#100816', bg_secondary: '#1A0F26', bg_card: '#221436',
+        text_primary: '#FFD9EF', text_secondary: '#C88FAE',
+        accent: '#F935B3', accent_hover: '#D6209A',
         danger: '#FF6B6B', success: '#3DFFC0', border: '#3A1848',
-        bg_modal: '#1C1130', border_card: '#3D1C50', accent_subtle: '#2A0820',
+        bg_modal: '#1C1030', border_card: '#451E58', accent_subtle: '#330B26',
       },
     },
     {
       name: 'Midnight Ocean',
       theme: {
-        bg_primary: '#030B14', bg_secondary: '#091828', bg_card: '#102338',
-        text_primary: '#E0F7FF', text_secondary: '#5B9AB8',
-        accent: '#00D4FF', accent_hover: '#00AACF',
-        danger: '#FF5F5F', success: '#00E5A0', border: '#0E2E44',
-        bg_modal: '#0D1E30', border_card: '#133650', accent_subtle: '#002A40',
+        bg_primary: '#041018', bg_secondary: '#0A1C2A', bg_card: '#0F2434',
+        text_primary: '#E3F6FC', text_secondary: '#7FB0C4',
+        accent: '#22D3EE', accent_hover: '#0EA5C4',
+        danger: '#FF5F5F', success: '#34D399', border: '#0E2E44',
+        bg_modal: '#0C1E2C', border_card: '#123A54', accent_subtle: '#062F45',
       },
     },
     {
       name: 'Cyberpunk Terminal',
       theme: {
-        bg_primary: '#0A0A0A', bg_secondary: '#141414', bg_card: '#1C1C1C',
-        text_primary: '#EAEAEA', text_secondary: '#707070',
-        accent: '#39FF14', accent_hover: '#2ECC10',
-        danger: '#FF4444', success: '#39FF14', border: '#252525',
-        bg_modal: '#181818', border_card: '#2E2E2E', accent_subtle: '#0A2200',
+        bg_primary: '#0A0C0A', bg_secondary: '#111611', bg_card: '#161D16',
+        text_primary: '#EDFBED', text_secondary: '#9BB69B',
+        accent: '#34D399', accent_hover: '#2CBE88',
+        danger: '#FF5C5C', success: '#2ED17C', border: '#1C241C',
+        bg_modal: '#141A14', border_card: '#243024', accent_subtle: '#0D2E22',
       },
     },
     {
       name: 'Arctic Frost',
       theme: {
-        bg_primary: '#EEF2F6', bg_secondary: '#FFFFFF', bg_card: '#FFFFFF',
-        text_primary: '#1A2E3D', text_secondary: '#5A7A94',
-        accent: '#0077CC', accent_hover: '#005FA3',
-        danger: '#D93025', success: '#1A7F4B', border: '#D0DDE8',
-        bg_modal: '#F5F8FB', border_card: '#C8D8E8', accent_subtle: '#E0EFFA',
-      },
-    },
-    {
-      name: 'Obsidian',
-      theme: {
-        bg_primary: '#0A0A0A', bg_secondary: '#141414', bg_card: '#1E1E1E',
-        text_primary: '#E8E8E8', text_secondary: '#707070',
-        accent: '#AAAAAA', accent_hover: '#CCCCCC',
-        danger: '#E05555', success: '#55AA77', border: '#242424',
-        bg_modal: '#181818', border_card: '#2C2C2C', accent_subtle: '#1A1A1A',
+        bg_primary: '#F4F6FA', bg_secondary: '#FFFFFF', bg_card: '#FFFFFF',
+        text_primary: '#1A2233', text_secondary: '#5A6B82',
+        accent: '#2563EB', accent_hover: '#1D4ED8',
+        danger: '#DC2626', success: '#15803D', border: '#D7DEE9',
+        bg_modal: '#FAFBFD', border_card: '#C9D4E3', accent_subtle: '#E2EBFB',
       },
     },
   ];
@@ -877,8 +908,8 @@
 
   document.getElementById('btn-theme-reset')?.addEventListener('click', async () => {
     try {
-      const obsidian = presets.find(p => p.name === 'Obsidian').theme;
-      applyThemeToEditor(obsidian);
+      const graphite = presets.find(p => p.name === 'Graphite').theme;
+      applyThemeToEditor(graphite);
       window.ui.showToast('Theme reset to defaults');
     } catch (err) {
       console.error('Theme reset failed:', err);
@@ -892,12 +923,13 @@
   });
 
   document.getElementById('btn-clear-all')?.addEventListener('click', async () => {
-    const confirmed = await window.ui.showConfirm('Delete all clipboard history?');
-    if (!confirmed) return;
+    const choice = await window.ui.showClearAllDialog();
+    if (!choice) return;
+    const keepPinned = choice === 'keep';
     try {
-      await window.api.clearAll();
-      window.ui.renderCards([], '');
-      window.ui.showToast('History cleared');
+      await window.api.clearAll(keepPinned);
+      loadEntries(window.search.getQuery(), window.search.getFilter());
+      window.ui.showToast(keepPinned ? 'History cleared (pinned kept)' : 'History cleared');
     } catch (err) {
       window.ui.showToast('Failed to clear history');
       console.error('Clear all failed:', err);
@@ -937,6 +969,11 @@
       window.__onWayland = true;
       window.__toggleCommand = cmd + ' toggle';
     });
+
+    window.__TAURI__.event.listen('paste-error', (event) => {
+      const msg = String(event.payload || '').replace(/\s+/g, ' ').trim();
+      window.ui.showToast('Copied, but paste failed: ' + msg, 8000);
+    });
   }
 
   try {
@@ -946,6 +983,21 @@
     }
   } catch (err) {
     console.error('Failed to check lock status:', err);
+  }
+
+  try {
+    const mode = await window.api.getFocusMode();
+    if (mode === 'no-focus') {
+      const hint = document.getElementById('focus-mode-hint');
+      const text = hint.querySelector('.focus-mode-hint-text');
+      text.textContent =
+        'No GNOME Shell extension: the picker is mouse-only here. ' +
+        'Install "Window Calls" (extensions.gnome.org/extension/4724) and ' +
+        're-login to restore keyboard navigation.';
+      hint.style.display = 'flex';
+    }
+  } catch (err) {
+    console.error('Failed to check focus mode:', err);
   }
 
   setInterval(async () => {

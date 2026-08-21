@@ -27,11 +27,11 @@ Built with **Tauri v2** (Rust backend + Vanilla JS frontend) for a tiny memory f
 
 ## Features
 
-- **Clipboard History** — Automatically captures text and images from the clipboard (FIFO, up to 100 entries)
+- **Clipboard History** — Automatically captures text and images from the clipboard (unlimited by default; optional cap in Settings)
 - **Search & Filter** — Real-time text search with highlighting, date filters (Today, Yesterday, 7d, 30d), and app source filtering
 - **Pin Entries** — Keep important items pinned — they are excluded from auto-eviction
 - **Private Mode** — Password-protect your clipboard with Argon2id hashing. When locked, clipboard monitoring pauses entirely
-- **Custom Themes** — 6 built-in presets (Void Purple, Synthwave, Midnight Ocean, Cyberpunk Terminal, Arctic Frost, Obsidian) or create your own with the color picker
+- **Custom Themes** — 6 built-in presets (Graphite, Void Purple, Synthwave, Midnight Ocean, Cyberpunk Terminal, Arctic Frost) or create your own with the color picker
 - **Global Hotkey** — Toggle the window from any app (default: `Alt+V`, configurable)
 - **System Tray** — Minimize to tray with Show/Hide, Lock Private Mode, and Quit menu
 - **Autostart** — Launch on login (toggle from Settings)
@@ -79,6 +79,8 @@ Default: **Alt+V** — toggle window show/hide.
 To change the hotkey, open Settings → click the hotkey display → press your desired key combination.
 
 > **Wayland note:** Global shortcuts depend on your desktop environment. On GNOME/KDE, the app attempts the `xdg-desktop-portal` GlobalShortcuts interface. If unavailable, you'll need to configure a custom keybind in your DE settings to run `ctrl-c toggle`.
+>
+> **Auto-paste note:** Auto-paste simulates Ctrl+V after copying. It needs `xdotool` on X11 or `wtype` on Wayland (`sudo apt install xdotool` / `sudo apt install wtype`). If the tool is missing, the entry is still copied to the clipboard and a toast explains what to install.
 
 ### Keyboard Shortcuts
 
@@ -126,29 +128,30 @@ The config file is located at:
 
 ```toml
 [theme]
-bg_primary = "#0A0A0A"
-bg_secondary = "#141414"
-bg_card = "#1E1E1E"
-bg_modal = "#181818"
-text_primary = "#E8E8E8"
-text_secondary = "#707070"
-accent = "#AAAAAA"
-accent_hover = "#CCCCCC"
-accent_subtle = "#1A1A1A"
-danger = "#E05555"
-success = "#55AA77"
-border = "#242424"
-border_card = "#2C2C2C"
-font_family = "Inter, system-ui, sans-serif"
+bg_primary = "#0B0D12"
+bg_secondary = "#12151D"
+bg_card = "#171B24"
+bg_modal = "#141822"
+text_primary = "#F1F4F9"
+text_secondary = "#9AA4B2"
+accent = "#4E8AFF"
+accent_hover = "#3D72E8"
+accent_subtle = "#182A4D"
+danger = "#E5484D"
+success = "#2FB58A"
+border = "#1F2430"
+border_card = "#262D3B"
+border_radius = "10px"
+font_family = "Geist, Inter, system-ui, sans-serif"
 font_size = "14px"
 
 [window]
 width = 420
 height = 600
-opacity = 0.97
+opacity = 1.0
 
 [behavior]
-max_entries = 100
+max_entries = 0
 poll_interval_ms = 500
 search_debounce_ms = 300
 
@@ -237,7 +240,7 @@ Database: SQLite (history.db)
 
 - **No frontend framework** — Vanilla JS keeps the bundle at zero dependencies and minimal memory usage
 - **Clipboard polling at 500ms** — Polling is necessary on Windows (clipboard APIs require a message pump); frontend-driven via `setInterval` calling a Tauri command
-- **100-entry FIFO history** — Oldest unpinned entries are auto-deleted when the limit is exceeded
+- **Unlimited history by default** — `max_entries = 0` keeps everything; set a cap in Settings to auto-evict oldest unpinned entries
 - **Images stored as raw RGBA** — Avoids re-encoding on copy/paste; on-demand PNG thumbnail generation for display
 - **Argon2id for private mode** — Strong password hashing, no plaintext passwords stored
 

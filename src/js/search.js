@@ -11,13 +11,33 @@ window.search = (() => {
   function init(onSearch) {
     onSearchCallback = onSearch;
 
+    const kbd = document.getElementById('search-kbd');
+    const clear = document.getElementById('btn-search-clear');
+
+    function syncButtons() {
+      const hasText = input.value.length > 0;
+      if (kbd) kbd.style.display = hasText ? 'none' : '';
+      if (clear) clear.style.display = hasText ? 'flex' : 'none';
+    }
+
     input.addEventListener('input', () => {
       clearTimeout(debounceTimer);
+      syncButtons();
       debounceTimer = setTimeout(() => {
         currentQuery = input.value.trim();
         onSearchCallback(currentQuery, currentFilter);
       }, 300);
     });
+
+    if (clear) {
+      clear.addEventListener('click', () => {
+        input.value = '';
+        currentQuery = '';
+        syncButtons();
+        input.focus();
+        if (onSearchCallback) onSearchCallback(currentQuery, currentFilter);
+      });
+    }
 
     filterBtns.forEach((btn) => {
       btn.addEventListener('click', () => {

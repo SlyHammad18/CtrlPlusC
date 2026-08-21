@@ -4,6 +4,359 @@
 
 ---
 
+## [Cleanup] — Debug Overlay & Trace Logging Removed; Extension Mode Confirmed Working — 2026-08-21
+
+### ✅ What Changed
+- **Extension mode verified on this machine:** after a session restart, gnome-shell loaded `window-calls@domandoman.xyz`; the probe now resolves to `Extension` mode and focus save/restore/paste works end-to-end (user-confirmed).
+- **Removed all paste-debug instrumentation** (was temporary diagnostics for the focus investigation):
+  - `lib.rs`: deleted `debug_log` / `debug_log_window` helpers, all call sites in `show_window` / `hide_and_paste` / `copy_and_paste`, and the `log_active_window` / `log_mutter_focus` diagnostic functions. Removed setup eprintlns.
+  - `paste.rs`: dropped the `log: &dyn Fn(&str)` callback from `simulate_paste` and all backends (`try_ydotool`, `try_ydotool_type`, `simulate_paste_uinput`, `ensure_virtual_keyboard`, `try_wtype`, `try_xdotool`). Error strings returned to the caller unchanged.
+  - `wayland_focus.rs`: `save_current_focus()` / `restore_focus()` no longer take a `log` param; removed the now-dead `title` field from `WaylandTarget` (only used by logging).
+  - Frontend: deleted the `#paste-debug` overlay div (`index.html`), its JS wiring incl. the `paste-debug` event listener (`app.js`), and all `.paste-debug*` styles (`cards.css`). Kept the `#focus-mode-hint` banner and the `paste-error` toast.
+- **Fixed stale comment** in `lib.rs` (old iconify-era strategy note) — now documents the actual strategy: `gtk_widget_hide` unmap + WM-state verify + wayland_focus hybrid restore.
+
+### ⏭️ What Was Not Changed
+- Functional logic untouched: WM-state hide poll (`force_wm_hidden`), focus restore + verify loop, keystroke selection (`CtrlV`/`CtrlShiftV`/`ShiftInsert`), fallback chains.
+- `#focus-mode-hint` banner kept — still useful for NoExtension-mode users.
+
+### ❌ Errors Faced
+- `cargo check` flagged `WaylandTarget.title` as dead code after removing the logging that read it — removed the field.
+- `cargo test --lib`: 35/36 pass; the 1 failure remains the pre-existing environmental `hotkey::tests::test_wayland_not_set`. All JS passes `node --check`.
+
+### 📝 Notes
+- Build: `cargo check` clean, no warnings.
+
+---
+
+## [Feature] — Wayland Focus Fix v2: Hybrid Adaptive (window-calls Extension Route) — 2026-08-21
+
+### ✅ What Changed
+- **New module `src-tauri/src/wayland_focus.rs`** — the GNOME Shell `window-calls` extension route (Phase 2), plus the `accept_focus=FALSE` mouse-only fallback (Option C "hybrid adaptive"), plus Phase 3 (terminal paste keystroke).
+  - `FocusMode` probe: runs `dbus-send --session --print-reply=literal --dest=org.gnome.Shell /org/gnome/Shell/Extensions/Windows org.gnome.Shell.Extensions.Windows.List`. Success → `Extension`; `UnknownMethod`/error → `NoExtension`. Cached in a `OnceLock` at startup.
+  - `WaylandTarget { id, title, wm_class, wm_class_instance }` captured from `List()` (the extension's JSON includes a per-window `focus` field — no `Details` scan needed).
+  - `save_current_focus()` — called in `show_window` before the picker takes focus.
+  - `restore_focus()` — `Activate(<winid>)` (raise + focus the target, same as clicking it in the shell).
+  - `verify_focus(id)` — re-runs `List()` and checks the saved `id` has `focus: true`; polled up to ~1s after restore.
+  - Tolerant `parse_json` — `dbus-send --print-reply=literal` prints the raw JSON string (leading whitespace tolerated); 4 unit tests.
+- **`lib.rs` integration:**
+  - `show_window()` is now mode-aware: Extension → capture target + accept-focus ON (keyboard nav preserved); NoExtension → accept-focus OFF permanently (mouse-only, picker never takes focus → paste goes to whatever has focus, correct by construction); X11 → unchanged xdotool path.
+  - `hide_and_paste()` Wayland branch rewritten: unmap via `gtk_widget_hide` (iconify proven a no-op in Phase 0a — dead code `force_minimize` removed) → Extension mode: `Activate` + verify-focus poll + log `verified=true/false`; NoExtension mode: 100ms settle, no restore needed. X11 path unchanged.
+  - `setup()`: initializes the probe and pins `accept_focus(false)` for NoExtension Wayland.
+  - New `get_focus_mode` Tauri command → `"x11" | "extension" | "no-focus"`.
+- **`paste.rs` — Phase 3 (terminal-aware keystroke):**
+  - New `PasteKey` enum: `CtrlV`, `CtrlShiftV`, `ShiftInsert`, each with ydotool keycodes / uinput sequence / wtype args / xdotool keysym.
+  - `paste_key_for_target()` in `lib.rs`: Extension mode + terminal `wm_class` → `CtrlShiftV`; Extension + GUI → `CtrlV`; unknown target (NoExtension/X11) → `ShiftInsert` (universal).
+  - `looks_like_terminal()` — matches gnome-terminal, kitty, alacritty, wezterm, foot, konsole, xterm, urxvt, tilix, terminator, ghostty, ptyxis, kgx, st-, etc.
+  - `simulate_paste(text, key, log)` — all backends (ydotool, uinput, wtype, xdotool) now take the key.
+- **Frontend:** `api.getFocusMode()`; `#focus-mode-hint` banner (amber) shown when mode is `no-focus`, telling the user to install "Window Calls" (e.g.o #4724) and re-login to restore keyboard navigation.
+- **Extension installed on this machine:** `window-calls@domandoman.xyz` v21 (supports Shell 45–50; shell here is 48.7) downloaded from e.g.o and placed in `~/.local/share/gnome-shell/extensions/`. It is NOT yet loaded by the running gnome-shell (needs a session restart to appear in the extension manager), so this session is currently in `NoExtension` mode; it will auto-upgrade to `Extension` mode after re-login.
+
+### ⏭️ What Was Not Changed
+- X11 path (`restore_focus` via xdotool), Windows paste, `log_mutter_focus`/`log_active_window` diagnostics.
+- `force_is_visible_wv` kept for tray/hotkey/socket toggles (show()/hide() flip the GTK visible flag — correct there).
+- No new frontend dependencies (framework-free stack unchanged).
+
+### ❌ Errors Faced
+- `dbus-send` rejects `--dest NAME` (space form) and `--object-path` — it requires `--dest=NAME` (equals) and takes the object path as a positional arg. Caught by a manual invocation test before writing the module.
+- `gnome-extensions install` succeeded but the running shell's extension manager did not pick up the new extension without a session restart (`UnknownMethod: Object does not exist at path` on `List`, `gnome-extensions list` doesn't show it). Documented; NoExtension mode handles this gracefully. No shell restart was attempted (would kill the user's session).
+- `cargo test --lib`: 35/36 pass. The 1 failure is the pre-existing `hotkey::tests::test_wayland_not_set` (asserts `!is_wayland()` but this machine runs Wayland). All JS passes `node --check`.
+
+### 📝 Notes
+- Build: `cargo check` clean, no warnings.
+- Verification matrix: (1) THIS session (NoExtension): picker should not take focus — select via mouse, paste should land in the target because the target never lost focus. Expect `no-extension mode -- no focus restore needed` in the log. (2) After re-login (Extension): `wayland_focus: captured target ...`, then `Activate(...)`, then `focus restored ... verified=true`, and paste lands in the target with the correct keystroke (`Ctrl+Shift+V` in terminals, `Ctrl+V` in GUI apps).
+- `window-calls` D-Bus surface confirmed from the installed `extension.js`: `List() -> s` (JSON with per-window `focus`), `GetTitle(u) -> s`, `Activate(u) -> ()`; object path `/org/gnome/Shell/Extensions/Windows`, interface `org.gnome.Shell.Extensions.Windows`.
+
+---
+
+### ✅ What Changed
+- **Root cause confirmed (0a):** The hide-verification poll used `gtk_widget_get_visible()`, which is a GTK-internal widget flag that `gtk_window_iconify()` never flips. Every Wayland paste therefore logged `STILL VISIBLE after 400ms` and fell through to `gtk_widget_hide()` — the iconify path was never actually verified.
+- **New real WM-state check (`lib.rs`):**
+  - `gdk_window_state_raw()` — reads `gdk_window_get_state()` from the cached raw `GdkWindow` (via `gtk_widget_get_window`).
+  - `force_wm_hidden()` — window is hidden iff `GDK_WINDOW_STATE_WITHDRAWN | GDK_WINDOW_STATE_ICONIFIED` is set (WITHDRAWN=1, ICONIFIED=2, GDK3).
+  - The `hide_and_paste` poll now verifies iconify against the compositor state and logs the raw bitmask + the `GDK_WINDOW_STATE_FOCUSED` (128) bit each 20ms iteration, so logs prove whether iconify actually unmaps and when Mutter moves focus away. On timeout it falls back to `gtk_widget_hide` and verifies again.
+  - Final pre-paste check switched from `is_visible` to `!force_wm_hidden`.
+- **Diagnostics made honest (0c):**
+  - `log_mutter_focus` now detects `AccessDenied`/`UnknownMethod`/empty Eval results and logs that `org.gnome.Shell.Eval` is restricted on GNOME 41+ (Wayland focus info requires a Shell extension). No more misleading `mutter_focus: (false, '')`-style output.
+  - `log_active_window` output annotated `(xwayland-only; does not reflect Wayland-native focus)` — xdotool only sees XWayland placeholders on Wayland.
+- **Dynamic accept-focus (Phase 1, primary fix):** new `set_accept_focus(accept)` calls `gtk_window_set_accept_focus` + `gtk_window_set_focus_on_map` on the cached window.
+  - `show_window()` enables accept-focus before showing, so the picker keeps keyboard focus for search / ArrowUp/Down / Enter / hotkey-recording while open.
+  - `hide_and_paste()` disables accept-focus the instant a selection is made (before iconify), declaring the window non-focus-taking during dismissal so it doesn't fight Mutter's focus restoration.
+  - Rationale: confirmed GNOME honors `accept_focus = FALSE` (sway ignores it — swaywm/sway#6368). This is the plan's keyboard-nav-preserving variant, chosen because this app has a real keyboard layer (search box, arrow nav, Enter-to-paste, hotkey recording) that plain always-off `accept_focus = FALSE` would break.
+- **Removed dead code:** `force_is_visible` (Window variant, orphaned by the WM-state poll) and `force_minimize_wv` (never called).
+
+### ⏭️ What Was Not Changed
+- ydotool socket path (0b): already correct in `paste.rs` — uses `$YDOTOOL_SOCKET` → `$XDG_RUNTIME_DIR/.ydotool_socket` → `/tmp/.ydotool_socket`. No UID hardcode to fix.
+- `force_is_visible_wv` kept — tray/hotkey/socket toggles use show()/hide() which DO flip the GTK visible flag, so it's correct there (only iconify doesn't).
+- Paste fallback chain, X11 path (`restore_focus`), Windows paste — unchanged.
+- Phase 2 (GNOME Shell extension route: `focused-window-dbus` + `activate-window-by-title`) NOT implemented — documented fallback if dynamic accept-focus + real WM-state verification prove insufficient against the Mutter MRU non-determinism bug.
+- Phase 3 (terminal `Ctrl+Shift+V`, target window id/class logging) deferred — requires reliable `wm_class` which is blocked without a Shell extension on Wayland.
+
+### ❌ Errors Faced
+- `cargo check` initially flagged `force_is_visible` (orphaned by this change) and pre-existing `force_minimize_wv` as dead code — removed both, build is warning-free.
+- `cargo test --lib`: 31/32 pass. The 1 failure is the pre-existing `hotkey::tests::test_wayland_not_set` (asserts `!is_wayland()` but this machine runs Wayland).
+- All JS files pass `node --check`.
+
+### 📝 Notes
+- Build: `cargo check` clean, no warnings.
+- Manual verification still pending: `npm run tauri dev` — open picker over a terminal, select an entry, confirm the log shows real `wm_state=0x... hidden=true` (ICONIFIED/WITHDRAWN) instead of the old `STILL VISIBLE` fallback, and that the paste lands in the terminal.
+- Honest caveat (from research): setting `accept_focus = FALSE` at hide-time does not rewrite Mutter's MRU stack, so if Mutter still restores focus to the wrong window on current versions, the next step is the Phase 2 extension route.
+
+---
+
+## [Fix] — GTK Direct Hide: Bypass Broken Tauri hide() on Wayland — 2026-08-20
+
+### ✅ What Changed
+- **Root cause confirmed:** Debug trace from previous session proved Tauri v2.11.2's `WebviewWindow::hide()` is **broken on Wayland** — it returns `Ok()` without actually unmapping the GTK window. Polling fallbacks (minimize, off-screen move) also failed because they go through the same broken Tauri layer.
+- **New approach: GTK direct hide.** Instead of calling Tauri's `window.hide()`, we now find the GTK toplevel window by title (`find_our_gtk_window()` — iterates `gtk::Window::list_toplevels()`) and call `gtk_win.hide()` / `gtk_win.is_visible()` / `gtk_win.iconify()` directly via `gtk::prelude::*`.
+- **Cross-platform wrappers** (`force_hide`, `force_hide_wv`, `force_is_visible`, `force_is_visible_wv`, `force_minimize`, `force_minimize_wv`) — on Linux these use GTK directly; on other platforms they fall back to Tauri's API. Separate `_wv` variants for `WebviewWindow` (tray/hotkey handlers) and non-`_wv` for `Window` (command handlers).
+- **All 6 `window.hide()` call sites** now use `force_hide` or `force_hide_wv` instead of raw Tauri `hide()`.
+- **Removed `raw-window-handle` dependency** — raw-window-handle 0.6 dropped GTK support; using `gtk` crate directly is cleaner.
+- **Added `gtk = "0.18"`** to Linux dependencies in `Cargo.toml`.
+
+### ⏭️ What Was Not Changed
+- `hide_and_paste` flow unchanged — it still calls `force_hide` → poll visibility → `simulate_paste`.
+- `ignore_blur` handling unchanged.
+- Paste simulation (ydotool/uinput/wtype) unchanged.
+
+### ❌ Errors Faced
+- `raw-window-handle` 0.6.2 removed the `GtkWindow`/`Gtk` variant — tried enabling a `gtk` feature that doesn't exist, then switched to using `gtk::Window::list_toplevels()` directly.
+- GTK methods (`hide`, `is_visible`, `iconify`) require `use gtk::prelude::*` in each function scope.
+- Build passes, 31/32 tests pass (1 pre-existing: `test_wayland_not_set` fails because `WAYLAND_DISPLAY` is set).
+
+### 📝 Notes
+- This is the definitive fix for the Wayland hide problem. Previous approaches (Tauri hide + verification + fallbacks) all failed because they still went through Tauri's broken API. Direct GTK calls bypass the issue entirely.
+- Run `npm run tauri dev` and check the debug trace. The `pre-paste is_visible=` line should now show `false` (window actually hidden) instead of `true` as before.
+
+---
+
+## [Fix] — Window Hide Verification + ignore_blur During Paste — 2026-08-20
+
+### ✅ What Changed
+- **Root cause:** `window.hide()` was failing silently on Wayland/Tauri v2 — all calls used `let _ = window.hide()` which discarded the error. The Ctrl+C window stayed visible and focused, so ydotool keystrokes went into our own window instead of the target app. Additionally, the blur handler (`on_window_event Focused(false)`) could race with `hide_and_paste` because `ignore_blur` was never set during paste.
+- **`hide_and_paste` rewritten with verification and fallbacks:**
+  1. `window.hide()` result is now logged (Ok or error).
+  2. Polls `window.is_visible()` every 20ms for up to 500ms to confirm the window actually hid.
+  3. If still visible, tries `window.minimize()` as fallback.
+  4. If still visible, moves the window off-screen as last resort.
+  5. Final `is_visible()` check before calling `simulate_paste` — logs WARNING if window is still visible.
+- **`ignore_blur` set during paste flow:** `copyById()` in `app.js` now calls `setIgnoreBlur(true)` before `copyAndPaste`/`copyImageAndPaste` and resets it in a `finally` block. This prevents the blur handler from racing with `hide_and_paste`.
+- **Shift+Insert key combo + `ydotool type` fallback** (from previous entry) remain in place.
+
+### ⏭️ What Was Not Changed
+- Blur handler logic unchanged — still respects `ignore_blur` flag.
+- Other `window.hide()` calls (tray icon, hotkey toggle) unchanged — they don't need the same verification.
+
+### ❌ Errors Faced
+- `window.set_visible(false)` does not exist in Tauri v2 — replaced with `minimize()` + off-screen move as fallbacks.
+- Build passes, 31/32 tests pass.
+
+### 📝 Notes
+- Run `npm run tauri dev`, try paste, and check the debug trace for `hide_and_paste: hidden after Xms` (confirming hide worked) or `STILL VISIBLE after 500ms` (triggering fallbacks). The `pre-paste is_visible=` line tells you definitively whether the window was hidden before keystrokes were injected.
+
+## [Fix] — Window Focus Restoration + ydotool Priority — 2026-08-20
+
+### ✅ What Changed
+- **Root cause:** On GNOME Wayland, after hiding the Ctrl+C window, focus was not restored to the previously-active window. Keystrokes from `simulate_paste()` went to the desktop (nowhere). Additionally, `xdotool windowactivate` was interfering with Mutter's natural focus restoration by sending spurious `_NET_ACTIVE_WINDOW` X11 messages through XWayland.
+- **`lib.rs` — focus management:** Added `save_focus()` / `restore_focus()` functions (Linux only):
+  - `save_focus()` runs `xdotool getactivewindow` and stores the window ID in a static `OnceLock<Mutex<Option<String>>>`. Called in `show_window()` before the Tauri window appears.
+  - `restore_focus()` runs `xdotool windowactivate --sync <id>` to return focus to the saved window. **X11 only** — on Wayland this is skipped because xdotool cannot focus Wayland windows and the calls interfere with Mutter.
+- **`hide_and_paste()` updated:** Platform-aware flow:
+  - **Wayland:** `hide → 200ms delay (Mutter restores focus automatically on window unmap) → paste`
+  - **X11:** `hide → xdotool windowactivate → 150ms delay → paste`
+- **`paste.rs` — ydotool socket path fix:** `try_ydotool()` now checks `$YDOTOOL_SOCKET`, then `$XDG_RUNTIME_DIR/.ydotool_socket`, then `/tmp/.ydotool_socket` (was only checking the last one). On this system the socket is at `/run/user/1000/.ydotool_socket`.
+- **`paste.rs` — Wayland priority swapped:** ydotool is now tried first on Wayland (before uinput), because ydotoold runs as root and creates a trusted virtual keyboard that Mutter accepts. uinput remains as fallback for wlroots compositors.
+
+### ⏭️ What Was Not Changed
+- `copy_and_paste` and `copy_image_and_paste` commands unchanged.
+- Windows paste path unchanged.
+- Image paste uses the same fallback chain as text paste.
+- `save_focus()` / `restore_focus()` are no-ops on non-Linux (wrapped in `#[cfg(target_os = "linux")]`).
+
+### ❌ Errors Faced
+- `xdotool windowactivate --sync <id>` on Wayland produces `XGetWindowProperty[_NET_WM_DESKTOP] failed (code=1)` and sends spurious `_NET_ACTIVE_WINDOW` messages through XWayland that interfere with Mutter's focus tracking. Fixed by only running `restore_focus()` on X11.
+
+### 📝 Notes
+- 31/32 tests pass (1 pre-existing Wayland-env failure: `hotkey::tests::test_wayland_not_set`).
+- On Wayland, external apps cannot focus other windows by design. Mutter handles focus restoration automatically when a window is unmapped (hidden). We just need to wait for the compositor to process the hide event.
+- If Mutter's automatic focus restoration still doesn't work, the next step would be investigating `libei` via the XDG RemoteDesktop portal (used by `wdotool`), which is the proper Wayland-native input injection mechanism.
+
+---
+
+### ✅ What Changed
+- **Root cause (final):** On GNOME Wayland, all three external paste tools fail:
+  - `ydotool` — reports success (exit 0) but Mutter drops the simulated keystrokes (OpenWhispr #956, June 2026).
+  - `wtype` — guaranteed to fail because GNOME does not implement the `virtual-keyboard-unstable-v1` protocol.
+  - `xdotool` — returns exit 0 on Wayland with XWayland but silently fails for native Wayland windows.
+- **New `src-tauri/src/paste.rs` module** — all paste simulation logic extracted from `lib.rs` into a dedicated module with a clean fallback chain:
+  1. **Native uinput** (primary) — creates a virtual keyboard via `/dev/uinput` at the kernel level, bypassing the compositor entirely. Works on **all** Wayland compositors (GNOME, KDE, Hyprland, Sway) and X11. Uses `mouse-keyboard-input` crate (v0.9.1). Device is lazily initialized via `OnceLock<Mutex<VirtualDevice>>` — 200ms one-time cost at first paste, zero overhead after.
+  2. `ydotool` (fallback) — with proper daemon socket verification (`/tmp/.ydotool_socket`) before attempting.
+  3. `wtype` (fallback) — for wlroots compositors (Hyprland, Sway).
+  4. `xdotool` (X11 fallback) — reliable on X11 sessions.
+- **`lib.rs` simplified:** `simulate_paste()` is now a thin wrapper calling `paste::simulate_paste()`. The inline Windows `keybd_event` and Linux `xdotool`/`ydotool`/`wtype` code removed.
+- **`Cargo.toml`:** Added `mouse-keyboard-input = "0.9.1"` under `[target.'cfg(target_os = "linux")'.dependencies]`.
+- **`tauri.conf.json`:** Removed `wtype` from deb dependencies (no longer needed for the primary paste path). `xdotool` kept (used by `get_foreground_app()` on X11).
+- **Frontend toast** updated: message prefix changed from "Copied, but auto-paste needs:" to "Copied, but paste failed:" (since backend now returns full setup instructions, not tool names). Toast duration raised to 8s.
+- **User requirement:** must be in the `input` group for uinput access: `sudo usermod -aG input $USER && relogin`.
+
+### ⏭️ What Was Not Changed
+- `hide_and_paste()` at the time of this entry (later updated in focus-restoration fix).
+- Windows paste path unchanged (uses `windows-sys` `keybd_event` directly).
+- `copy_and_paste` and `copy_image_and_paste` commands unchanged — they call `hide_and_paste()` which calls `simulate_paste()`.
+- Image paste uses the same fallback chain as text paste.
+
+### ❌ Errors Faced
+- `OnceLock::get_or_try_init` is unstable (`once_cell_try` feature gate). Workaround: manual init with `ensure_virtual_keyboard()` that checks `get().is_some()`, creates device, and uses `set()`.
+- `mouse-keyboard-input`'s `VirtualDevice` methods require `&mut self`, so the device is wrapped in `Mutex<VirtualDevice>` inside the `OnceLock` for interior mutability.
+- Build requires `libudev-dev` on the build machine (for `mouse-keyboard-input` crate's sys dependency).
+
+### 📝 Notes
+- 31/32 tests pass (1 pre-existing Wayland-env failure: `hotkey::tests::test_wayland_not_set`).
+- The uinput approach is the same kernel-level injection used by CopyClip, GhostClip, and OpenWhispr v1.4.9+ — the most reliable paste method on modern Linux.
+- `wtype` removed from deb hard deps to avoid pulling in packages that don't work on GNOME. Users on wlroots compositors can install it manually as a fallback.
+
+---
+
+## [Fix] — Auto-Paste Timing: Wait for Focus Loss Before Injecting — 2026-08-18
+
+### ✅ What Changed
+- **Root cause:** after `window.hide()`, the paste was injected before the compositor moved keyboard focus away from the Ctrl+C window, so Ctrl+V landed in our own (hidden-but-focused) window — nothing pasted into the target.
+- The previous `is_visible()` poll was useless on Wayland: GTK flips `is_visible()` to `false` synchronously on `hide()`, before the compositor commits the hide.
+- **`hide_and_paste()` now polls `window.is_focused()`** (Linux → `gtk_window_is_active()`, driven by real compositor focus events) until the window no longer holds keyboard focus — i.e. GNOME has restored focus to the previously active window. Bounded at 50 × 20ms (1s) so it can never hang; then a 50ms settle before `simulate_paste()`.
+- ydotool key injection now uses `-d 30` (30ms between key events) for reliable combo recognition.
+
+### ⏭️ What Was Not Changed
+- Fallback chain (ydotool → wtype → toast) and X11 (`xdotool`) path unchanged. Image paste uses the same `hide_and_paste()`.
+
+### ✅ Verification
+- `ydotool key 30:1 30:0` (inject letter `a`) confirmed injection reaches the focused window.
+- `ydotool key -d 30 29:1 47:1 47:0 29:0` confirmed clipboard + injection work outside the app.
+- Debug + release binaries rebuilt; no `.deb` produced (per request).
+
+---
+
+## [Fix] — Auto-Paste via ydotool on GNOME Wayland — 2026-08-18
+
+### ✅ What Changed
+- **Root cause (final):** GNOME's Mutter deliberately does not implement the `virtual-keyboard-unstable-v1` protocol (security-motivated design decision). `wtype` therefore can never work on GNOME/KWin — only on wlroots compositors (Sway, Hyprland, ...). This is compositor-imposed, not a config/syntax issue.
+- **`simulate_paste()` (Linux/Wayland) now uses a fallback chain:**
+  1. `ydotool key 29:1 47:1 47:0 29:0` — injects via `/dev/uinput` at the kernel level, upstream of any compositor. Works on GNOME, KDE, Sway, everything. Requires the `ydotoold` daemon.
+  2. `wtype -M ctrl v -m ctrl` — virtual-keyboard protocol, for wlroots-based compositors.
+  3. If both fail, emits a toast telling the user to start the service: `systemctl --user enable --now ydotool`.
+- X11 path unchanged (`xdotool key --clearmodifiers ctrl+v`).
+
+### ⏭️ What Was Not Changed
+- Deb `depends` keeps `wtype` + `xdotool` (both in trixie main). `ydotool` deliberately NOT added as a hard dependency — it only exists in `trixie-backports`, and a hard dep would break `apt install` for users without backports enabled.
+
+### ❌ Errors Faced
+- `ydotoold.service` does not exist; the Debian package names the user unit `ydotool.service` (ExecStart still runs `ydotoold`).
+- User service fails with `failed to open uinput device: Permission denied` because the user is not in the `input` group (package udev rule `80-uinput.rules` grants `/dev/uinput` to group `input`, mode 0660). Fix: `sudo usermod -aG input $USER` + re-login (group membership applies at login; the systemd user manager inherits it).
+
+### 📝 Notes
+- Debug + release binaries rebuilt (`cargo build` / `cargo build --release`); no `.deb` bundle produced (per request).
+- All running app instances were killed (`pkill -x ctrl-c`).
+
+---
+
+## [Fix] — wtype Syntax Correction for Auto-Paste — 2026-08-16
+
+### ✅ What Changed
+- **Root cause found:** `simulate_paste()` invoked `wtype -k ctrl+v`, but `-k` accepts a single key only. wtype fails with `Unknown key 'ctrl+v'`, so auto-paste never fired even with wtype installed.
+- **Fixed to:** `wtype -M ctrl v -m ctrl` (press ctrl, type v, release ctrl) in `src-tauri/src/lib.rs`.
+- Rebuilt release `.deb`.
+
+### ⏭️ What Was Not Changed
+- Nothing else; 180ms paste delay and single-instance guard from the previous entry remain.
+
+### ❌ Errors Faced
+- `wtype --help` / `wtype -h` error with "Missing argument" (option requires an arg); used `man wtype` to confirm flag semantics instead.
+
+### 📝 Notes
+- Verified against `man wtype` (`-M MOD` press, `-m MOD` release, `-k KEY` single key; modifiers auto-release at exit).
+
+---
+
+## [Fix] — Auto-Paste on Wayland + Deb Dependencies — 2026-08-16
+
+### ✅ What Changed
+- **Auto-paste root cause found:** two `ctrl-c` instances were running; the first (`/usr/bin/ctrl-c (deleted)`) was a stale process from before the `.deb` reinstall, still executing the old pre-`wtype` binary in memory. Its inode was deleted on reinstall but it kept running, so clicks hit the old X11-only paste path that fails silently. Killed all instances; only a fresh, new-code instance runs now.
+- **Paste timing hardened:** the hide→Ctrl+V delay was raised from 50ms to 180ms (`copy_and_paste`, `copy_image_and_paste`) so GNOME/Wayland has time to return keyboard focus to the previously active window before `wtype -k ctrl+v` is sent.
+- **Single-instance guard (Linux):** new `is_already_running()` connects to the toggle Unix socket at startup; if it connects, the second instance exits with "Ctrl+C is already running" instead of silently running alongside the first (prevents the reinstall/autostart stale-duplicate scenario). Guard runs before `start_socket_listener()`.
+- **Deb now installs all runtime dependencies:** added `wtype` and `xdotool` to `bundle.linux.deb.depends` in `tauri.conf.json`. `apt install ./Ctrl+C_0.1.0_amd64.deb` now auto-installs the paste-simulation tools (no manual step).
+- README already documents the auto-paste tool requirement; `.deb` dependency change supersedes the manual install note.
+
+### ⏭️ What Was Not Changed
+- Paste remains a single, well-timed attempt (no retry loop) to avoid double-pasting.
+- `get_foreground_app()` on Linux still uses `xdotool` — app-name detection on Wayland remains best-effort (returns empty without it).
+
+### ❌ Errors Faced
+- `pkill -f 'ctrl-c'` matched the invoking shell's own command line and killed it (timeout); resolved by using `pkill -x ctrl-c` (exact process name).
+- `sudo` install of the `.deb` cannot run non-interactively here (password required) — user installs it.
+
+### 📝 Notes
+- 31/32 lib tests pass (1 pre-existing Wayland-env failure `hotkey::tests::test_wayland_not_set`). Release `.deb` rebuilt with new depends.
+
+---
+
+## [Feature] — Unlimited History, Safe Clear-All, Wayland Auto-Paste — 2026-08-15
+
+### ✅ What Changed
+- **Unlimited history by default:** `behavior.max_entries` default is now `0` (keep everything). `Database` now stores `max_entries` (`AtomicI64`) and:
+  - `add_entry_ext` → `cleanup()` skipped when `max_entries <= 0`
+  - `get_entries` → `LIMIT` omitted when unlimited (was hardcoded `LIMIT 100`)
+  - New `Database::set_max_entries()`, synced at startup and whenever Settings saves config
+  - Settings panel gained a **History limit** field (`setting-max-entries`): `0` = unlimited, any number = cap. Wired in `app.js`.
+  - Tests: `test_unlimited_max_entries`, `test_capped_max_entries`.
+- **Clear-all now asks about pinned entries:** new `showClearAllDialog()` in `ui.js` (Cancel / "Clear all, keep pinned" / "Delete everything"). Backend `clear_all` command takes `keep_pinned`; `Database::clear_all(keep_pinned)` deletes only unpinned rows when requested. UI reloads afterwards so remaining pinned cards show. New confirm styles (`.confirm-keep`, `.confirm-hint`, `.confirm-actions-col`). Test: `test_clear_all_keeps_pinned`.
+- **Auto-paste fixed for Linux/Wayland:** `simulate_paste()` now returns `Result` and:
+  - **Wayland:** runs `wtype -k ctrl+v` (was X11-only `xdotool`, which failed silently on Wayland)
+  - **X11:** runs `xdotool key --clearmodifiers ctrl+v`
+  - On failure, `copy_and_paste` / `copy_image_and_paste` emit a `paste-error` event; frontend shows a toast ("Copied, but auto-paste needs: install wtype/xdotool") since the clipboard write already succeeded.
+- README updated (unlimited history, `max_entries = 0` example, auto-paste/Wayland tool note).
+
+### ⏭️ What Was Not Changed
+- `get_foreground_app()` on Linux still uses `xdotool` (returns empty app name on Wayland without it) — separate concern, left as-is.
+- Pre-existing `hotkey::tests::test_wayland_not_set` still expected-fails on this Wayland machine.
+
+### ❌ Errors Faced
+- `sudo apt-get install -y wtype` requires an interactive password; blocked in this environment. User must run it: `sudo apt install -y wtype`.
+- Cargo test run initially rejected two `TESTNAME` filters in one invocation (CLI limitation) — reran with a single filter.
+
+### 📝 Notes
+- 31/32 lib tests pass (1 pre-existing Wayland-env failure). JS passes `node --check` on all files. Debug + release `.deb` rebuilt.
+
+---
+
+## [UI Overhaul] — Graphite Design System — 2026-08-15
+
+### ✅ What Changed
+- **Design system "Graphite":** new default palette (deep off-black `#0B0D12` base, elevated `#171B24` cards, single electric-blue accent `#4E8AFF`). All 13 theme tokens recalibrated in `src-tauri/src/config.rs`, `src/js/app.js` presets, and `README.md`.
+- **Typography:** switched UI font default to **Geist** (fallback Inter) and added **JetBrains Mono** for all metadata (timestamps, app names, group labels, hotkeys, kbd hints, version, entry names). Fonts loaded via Google Fonts in `src/index.html`.
+- **Window chrome:** enabled native drop shadow (`shadow: true`) in `tauri.conf.json`; `.app` now uses `border-radius: var(--border-radius)` with the transparent window for rounded corners.
+- **Layout rebuild:** slim mono titlebar with inline close button; command-palette-style search bar with `Ctrl /` kbd hint + clear button; labeled **REC / PAUSED status pill** (replaced orphan green dot); footer now shows entry count on the left and "Clear all" + settings on the right.
+- **Card redesign:** proper elevation (tinted shadows), more padding, pinned cards get a subtle accent tinted left bar + filled star (replaced clashing white stripe), action buttons always faintly visible with semantic hover colors, group dividers now include a hairline + count badge.
+- **Signature micro-interaction: copy-flash** — clicking a card to copy fires an accent ring pulse and swaps the copy icon to a checkmark for 700ms (`ui.js flashCopied`, wired in `app.js copyById`).
+- **Accessibility & motion:** global `:focus-visible` accent rings; all animations gated behind `prefers-reduced-motion`; `slideOut` rewritten to animate only transform/opacity (no `max-height`); skeleton loading state added; contrast raised for secondary text/placeholders.
+- **Overlays unified:** settings/theme/edit/lock panels share one radius (`--border-radius`), scrim + backdrop blur, consistent headers/footers; theme editor buttons now use darker `accent_hover` so white labels pass 4.5:1.
+- **Copy audit:** removed em-dash in empty-state copy; placeholder changed to "Search history".
+- **Design tokens:** added non-themed CSS vars (`--font-mono`, `--radius-sm`, `--elev-1/2/3`, `--scrim`, `--z-*` scale, `--accent-rgb` derived in `theme.js`).
+- **Icons:** standardized inline SVGs to 24px viewBox, stroke-width 1.8, round caps.
+- **Themes refreshed:** all 6 presets recalibrated (no pure black, elevated surfaces, AA secondary text, darker hover accents); `Obsidian` default renamed **Graphite** (`btn-theme-reset` updated).
+
+### ⏭️ What Was Not Changed
+- No backend logic changes beyond config defaults (clipboard, database, hotkey, private mode untouched).
+- Icon library not added — zero-dependency frontend architecture preserved; existing inline SVG set standardized instead.
+- `src-tauri` `window.opacity` config is not applied to the actual window at runtime (pre-existing; left as-is).
+
+### ❌ Errors Faced
+- None during implementation.
+- Pre-existing test `hotkey::tests::test_wayland_not_set` fails on this machine because the session is Wayland (asserts `!is_wayland()`); unrelated to this task. Config tests pass.
+
+### 📝 Notes
+- `cargo check` passes; `cargo test --lib config::tests` passes (4/4); all JS files pass `node --check`.
+- Verification pending: dev build + screenshot review via vision model.
+
+---
+
 ## [Pre-Task] — Design Document Created — 2026-05-24
 
 ### ✅ What Changed

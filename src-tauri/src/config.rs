@@ -61,21 +61,21 @@ impl Default for ThemeConfig {
     }
 }
 
-fn default_bg_primary() -> String { "#0A0A0A".to_string() }
-fn default_bg_secondary() -> String { "#141414".to_string() }
-fn default_bg_card() -> String { "#1E1E1E".to_string() }
-fn default_bg_modal() -> String { "#181818".to_string() }
-fn default_text_primary() -> String { "#E8E8E8".to_string() }
-fn default_text_secondary() -> String { "#707070".to_string() }
-fn default_accent() -> String { "#AAAAAA".to_string() }
-fn default_accent_hover() -> String { "#CCCCCC".to_string() }
-fn default_accent_subtle() -> String { "#1A1A1A".to_string() }
-fn default_danger() -> String { "#E05555".to_string() }
-fn default_success() -> String { "#55AA77".to_string() }
-fn default_border() -> String { "#242424".to_string() }
-fn default_border_card() -> String { "#2C2C2C".to_string() }
-fn default_border_radius() -> String { "12px".to_string() }
-fn default_font_family() -> String { "Inter, system-ui, sans-serif".to_string() }
+fn default_bg_primary() -> String { "#0B0D12".to_string() }
+fn default_bg_secondary() -> String { "#12151D".to_string() }
+fn default_bg_card() -> String { "#171B24".to_string() }
+fn default_bg_modal() -> String { "#141822".to_string() }
+fn default_text_primary() -> String { "#F1F4F9".to_string() }
+fn default_text_secondary() -> String { "#9AA4B2".to_string() }
+fn default_accent() -> String { "#4E8AFF".to_string() }
+fn default_accent_hover() -> String { "#3D72E8".to_string() }
+fn default_accent_subtle() -> String { "#182A4D".to_string() }
+fn default_danger() -> String { "#E5484D".to_string() }
+fn default_success() -> String { "#2FB58A".to_string() }
+fn default_border() -> String { "#1F2430".to_string() }
+fn default_border_card() -> String { "#262D3B".to_string() }
+fn default_border_radius() -> String { "10px".to_string() }
+fn default_font_family() -> String { "Geist, Inter, system-ui, sans-serif".to_string() }
 fn default_font_size() -> String { "14px".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,7 +100,7 @@ impl Default for WindowConfig {
 
 fn default_window_width() -> u32 { 420 }
 fn default_window_height() -> u32 { 600 }
-fn default_window_opacity() -> f64 { 0.97 }
+fn default_window_opacity() -> f64 { 1.0 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BehaviorConfig {
@@ -122,7 +122,7 @@ impl Default for BehaviorConfig {
     }
 }
 
-fn default_max_entries() -> u32 { 100 }
+fn default_max_entries() -> u32 { 0 }
 fn default_poll_interval_ms() -> u64 { 500 }
 fn default_search_debounce_ms() -> u64 { 300 }
 
@@ -228,9 +228,9 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.theme.bg_primary, "#0A0A0A");
+        assert_eq!(config.theme.bg_primary, "#0B0D12");
         assert_eq!(config.window.width, 420);
-        assert_eq!(config.behavior.max_entries, 100);
+        assert_eq!(config.behavior.max_entries, 0);
         assert_eq!(config.hotkey.toggle_window, "Alt+V");
         assert!(!config.autostart);
         assert!(config.private_mode_password_hash.is_empty());
@@ -263,7 +263,7 @@ mod tests {
         "##;
         let config: Config = toml::from_str(partial).unwrap();
         assert_eq!(config.theme.bg_primary, "#FF0000");
-        assert_eq!(config.theme.bg_secondary, "#141414");
+        assert_eq!(config.theme.bg_secondary, "#12151D");
         assert_eq!(config.window.width, 420);
     }
 }

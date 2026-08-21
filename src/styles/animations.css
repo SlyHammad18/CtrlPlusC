@@ -1,7 +1,7 @@
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -12,7 +12,7 @@
 @keyframes slideIn {
   from {
     opacity: 0;
-    transform: translateY(-12px) scale(0.98);
+    transform: translateY(-8px) scale(0.985);
   }
   to {
     opacity: 1;
@@ -24,15 +24,10 @@
   from {
     opacity: 1;
     transform: translateY(0) scale(1);
-    max-height: 200px;
   }
   to {
     opacity: 0;
-    transform: translateY(-12px) scale(0.98);
-    max-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    margin-bottom: 0;
+    transform: translateY(-8px) scale(0.99);
   }
 }
 
@@ -47,35 +42,60 @@
   50% { opacity: 0.5; }
 }
 
+@keyframes copyFlash {
+  0% {
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgb(var(--accent-rgb) / 0);
+  }
+}
+
 .clip-card {
-  animation: fadeIn 0.25s ease both;
+  animation: fadeIn 0.22s ease both;
 }
 
 .clip-card.entering {
-  animation: slideIn 0.3s ease both;
+  animation: slideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .clip-card.removing {
-  animation: slideOut 0.25s ease both;
-  overflow: hidden;
+  animation: slideOut 0.22s ease both;
+}
+
+.clip-card.copied {
+  animation: copyFlash 0.7s ease;
+  border-color: var(--success);
 }
 
 .clip-card.shake {
   animation: shake 0.4s ease;
 }
 
-.filter-btn {
-  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-}
+@media (prefers-reduced-motion: reduce) {
+  .clip-card,
+  .clip-card.entering,
+  .clip-card.removing,
+  .clip-card.copied,
+  .clip-card.shake,
+  .skeleton-card,
+  .record-dot.paused {
+    animation: none !important;
+  }
 
-.search-input {
-  transition: border-color 0.2s ease;
-}
+  .search-kbd,
+  .toast,
+  .confirm-box,
+  .settings-panel,
+  .theme-panel,
+  .edit-panel {
+    transition: none !important;
+  }
 
-.icon-btn {
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.clip-action-btn {
-  transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }
