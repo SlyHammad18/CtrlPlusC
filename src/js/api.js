@@ -97,8 +97,5 @@ window.api = (() => {
 
     getFocusMode: () =>
       invoke('get_focus_mode'),
-
-    setCollapsedGroups: (groups) =>
-      invoke('set_collapsed_groups', { groups }),
   };
 })();

@@ -158,8 +158,6 @@ pub struct Config {
     pub private_mode_password_hash: String,
     #[serde(default)]
     pub private_mode_locked: bool,
-    #[serde(default)]
-    pub collapsed_groups: Vec<String>,
 }
 
 impl Default for Config {
@@ -172,7 +170,6 @@ impl Default for Config {
             autostart: default_autostart(),
             private_mode_password_hash: String::new(),
             private_mode_locked: false,
-            collapsed_groups: Vec::new(),
         }
     }
 }
@@ -237,30 +234,17 @@ mod tests {
         assert_eq!(config.hotkey.toggle_window, "Alt+V");
         assert!(!config.autostart);
         assert!(config.private_mode_password_hash.is_empty());
-        assert!(config.collapsed_groups.is_empty());
     }
 
     #[test]
     fn test_config_roundtrip() {
-        let mut config = Config::default();
-        config.collapsed_groups = vec!["Today".to_string(), "Yesterday".to_string()];
+        let config = Config::default();
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let parsed: Config = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.theme.bg_primary, config.theme.bg_primary);
         assert_eq!(parsed.window.width, config.window.width);
         assert_eq!(parsed.behavior.poll_interval_ms, config.behavior.poll_interval_ms);
         assert_eq!(parsed.hotkey.toggle_window, config.hotkey.toggle_window);
-        assert_eq!(parsed.collapsed_groups, config.collapsed_groups);
-    }
-
-    #[test]
-    fn test_collapsed_groups_default_when_missing() {
-        let partial = r##"
-            [theme]
-            bg_primary = "#FF0000"
-        "##;
-        let config: Config = toml::from_str(partial).unwrap();
-        assert!(config.collapsed_groups.is_empty());
     }
 
     #[test]
