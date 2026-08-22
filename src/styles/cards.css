@@ -557,6 +557,7 @@
   .group-rule,
   .group-label,
   .group-delete-btn {
+  .group-label {
     transition: none;
   }
 }
