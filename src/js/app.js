@@ -191,14 +191,25 @@
 
   let selectedIndex = -1;
   let selectedActionIndex = -1;
+  let selectedEl = null;
 
   function selectCard(cards, idx) {
     cards.forEach((c) => c.classList.remove('selected'));
+    selectedEl = null;
     if (idx >= 0 && idx < cards.length) {
       cards[idx].classList.add('selected');
+      selectedEl = cards[idx];
       cards[idx].scrollIntoView({ block: 'nearest' });
     }
     selectedActionIndex = -1;
+  }
+
+  function validateSelection(cards) {
+    if (selectedEl && !cards.includes(selectedEl)) {
+      selectedEl.classList.remove('selected');
+      selectedEl = null;
+      selectedIndex = -1;
+    }
   }
 
   function isInputFocused() {
@@ -212,7 +223,9 @@
   }
 
   document.addEventListener('keydown', async (e) => {
-    const cards = cardList.querySelectorAll('.clip-card');
+    const cards = Array.from(cardList.querySelectorAll('.clip-card')).filter(
+      (c) => !c.closest('.group.collapsed')
+    );
     const searchInput = document.getElementById('search-input');
 
     // Escape: close overlays or hide to tray
@@ -296,6 +309,8 @@
 
     // Card navigation & actions (when not focused in an input)
     if (!isInputFocused()) {
+      validateSelection(cards);
+
       if (e.key === 'ArrowDown' && cards.length > 0) {
         e.preventDefault();
         selectedIndex = Math.min(selectedIndex + 1, cards.length - 1);
@@ -967,7 +982,9 @@
       document.getElementById('theme-overlay')?.classList.remove('visible');
       window.ui.hideFilterPanel();
 
-      const cards = cardList.querySelectorAll('.clip-card');
+      const cards = Array.from(cardList.querySelectorAll('.clip-card')).filter(
+        (c) => !c.closest('.group.collapsed')
+      );
       if (cards.length > 0) {
         selectedIndex = 0;
         selectCard(cards, 0);

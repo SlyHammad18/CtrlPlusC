@@ -4,6 +4,25 @@
 
 ---
 
+## [Fix] — Group Headers Unfocusable + Collapsed-Group Keyboard Nav — 2026-08-22
+
+### ✅ What Changed
+- **Group headers (Pinned / day headers) are no longer keyboard-focusable:** `divider.tabIndex = -1` on the `.group-divider` button in `buildGroupSection()` (`src/js/ui.js`). Tab order skips headers entirely; mouse click-to-toggle and the header delete button still work.
+- **Arrow-key navigation respects collapse state:** the flat `cardList.querySelectorAll('.clip-card')` enumeration at the top of the global keydown handler (`src/js/app.js`) now filters out cards inside `.group.collapsed` sections (same pattern as the existing hotkey-show filter, which now also uses it). Expanded groups' children receive focus; collapsed groups' children cannot be selected via ArrowUp/Down. Search is unaffected (groups render force-expanded during a query).
+- **Stale selection auto-clears:** since `validateSelection()` now runs against the filtered list, selecting a card then collapsing its group clears `selectedIndex`/`selectedEl` on the next keypress (complements the existing deselect-on-collapse in `toggleSection`).
+
+### ⏭️ What Was Not Changed
+- Backend untouched. `toggleSection`, collapse persistence, and `inert` handling unchanged.
+
+### ❌ Errors Faced
+- First `npm run tauri dev` after the project move failed: build script cache referenced absolute paths from the old location (`/home/hammad/Coding/...`). Fixed by removing stale `target/debug/build/{tauri,ctrl-c}-*` dirs; incremental rebuild succeeded.
+
+### 📝 Notes
+- Verification: app launches from `target/debug/ctrl-c`; manual pass: Tab skips group dividers, arrows skip cards in collapsed groups, expanding a group makes its cards focusable again.
+- Stacked on `feat/delete-day-group`.
+
+---
+
 ## [Feature] — Per-Section Bulk Delete (Delete All Entries in a Day Group) — 2026-08-22
 
 ### ✅ What Changed
