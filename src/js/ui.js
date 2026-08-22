@@ -87,6 +87,93 @@ window.ui = (() => {
   const cardList = document.getElementById('card-list');
   const emptyState = document.getElementById('empty-state');
 
+  const CHEVRON_SVG =
+    '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>';
+
+  let collapsedSections = new Set();
+  let collapsePersistRef = null;
+
+  function setCollapsedSections(list) {
+    collapsedSections = new Set(list || []);
+  }
+
+  function setCollapsePersist(fn) {
+    collapsePersistRef = fn;
+  }
+
+  function toggleSection(section) {
+    const query = window.search && window.search.getQuery ? window.search.getQuery() : '';
+    if (query && query.length) return;
+    const label = section.dataset.group;
+    const collapsed = section.classList.toggle('collapsed');
+    const btn = section.querySelector('.group-divider');
+    if (btn) {
+      btn.setAttribute('aria-expanded', String(!collapsed));
+      btn.title = collapsed ? 'Expand ' + label : 'Collapse ' + label;
+    }
+    const body = section.querySelector('.group-items');
+    if (body) body.inert = collapsed;
+    if (collapsed) {
+      section.querySelectorAll('.clip-card.selected').forEach((c) => c.classList.remove('selected'));
+    }
+    if (collapsed) collapsedSections.add(label);
+    else collapsedSections.delete(label);
+    if (collapsePersistRef) collapsePersistRef([...collapsedSections]);
+  }
+
+  function buildGroupSection(group, query, forceExpanded) {
+    const section = document.createElement('section');
+    section.className = 'group';
+    section.dataset.group = group.label;
+
+    const collapsed = !forceExpanded && collapsedSections.has(group.label);
+    if (collapsed) section.classList.add('collapsed');
+
+    const itemsId = 'group-items-' + group.label.toLowerCase().replace(/\s+/g, '-');
+
+    const divider = document.createElement('button');
+    divider.type = 'button';
+    divider.className = 'group-divider';
+    divider.setAttribute('aria-expanded', String(!collapsed));
+    divider.setAttribute('aria-controls', itemsId);
+    divider.title = collapsed ? 'Expand ' + group.label : 'Collapse ' + group.label;
+
+    const chevron = document.createElement('span');
+    chevron.className = 'group-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.innerHTML = CHEVRON_SVG;
+    divider.appendChild(chevron);
+
+    const label = document.createElement('span');
+    label.className = 'group-label';
+    label.textContent = group.label;
+    divider.appendChild(label);
+
+    const count = document.createElement('span');
+    count.className = 'group-count';
+    count.textContent = group.items.length;
+    divider.appendChild(count);
+
+    const rule = document.createElement('span');
+    rule.className = 'group-rule';
+    divider.appendChild(rule);
+
+    const body = document.createElement('div');
+    body.className = 'group-items';
+    body.id = itemsId;
+    body.inert = collapsed;
+    const inner = document.createElement('div');
+    inner.className = 'group-items-inner';
+    group.items.forEach((entry) => inner.appendChild(createCard(entry, query)));
+    body.appendChild(inner);
+
+    divider.addEventListener('click', () => toggleSection(section));
+
+    section.appendChild(divider);
+    section.appendChild(body);
+    return section;
+  }
+
   function getGroupLabel(date) {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -284,21 +371,9 @@ window.ui = (() => {
     });
 
     const fragment = document.createDocumentFragment();
+    const searchActive = Boolean(query && query.length);
     groups.forEach((group) => {
-      const divider = document.createElement('div');
-      divider.className = 'group-divider';
-      const label = document.createElement('span');
-      label.className = 'group-label';
-      label.textContent = group.label;
-      divider.appendChild(label);
-      const count = document.createElement('span');
-      count.className = 'group-count';
-      count.textContent = group.items.length;
-      divider.appendChild(count);
-      fragment.appendChild(divider);
-      group.items.forEach((entry) => {
-        fragment.appendChild(createCard(entry, query));
-      });
+      fragment.appendChild(buildGroupSection(group, query, searchActive));
     });
     cardList.appendChild(fragment);
     updateCount();
@@ -331,49 +406,40 @@ window.ui = (() => {
     else targetLabel = 'Older';
 
     const order = ['Pinned', 'Today', 'Yesterday', 'This Week', 'Last Week', 'Older'];
-    const dividers = cardList.querySelectorAll('.group-divider');
+    const sections = cardList.querySelectorAll('.group');
     let inserted = false;
 
-    for (const div of dividers) {
-      const span = div.querySelector('.group-label');
-      if (span && span.textContent === targetLabel) {
-        cardList.insertBefore(card, div.nextSibling);
-        const count = div.querySelector('.group-count');
-        if (count) count.textContent = parseInt(count.textContent || '0', 10) + 1;
-        inserted = true;
+    for (const section of sections) {
+      if (section.dataset.group === targetLabel) {
+        const inner = section.querySelector('.group-items-inner');
+        const count = section.querySelector('.group-count');
+        if (inner) {
+          inner.insertBefore(card, inner.firstChild);
+          if (count) count.textContent = parseInt(count.textContent || '0', 10) + 1;
+          inserted = true;
+        }
         break;
       }
     }
 
     if (!inserted) {
       let refNode = null;
-      for (const div of dividers) {
-        const span = div.querySelector('.group-label');
-        if (span) {
-          const targetIdx = order.indexOf(targetLabel);
-          const thisIdx = order.indexOf(span.textContent);
-          if (thisIdx > targetIdx) {
-            refNode = div;
-            break;
-          }
+      for (const section of sections) {
+        const idx = order.indexOf(section.dataset.group);
+        if (idx > order.indexOf(targetLabel)) {
+          refNode = section;
+          break;
         }
       }
-      const newDivider = document.createElement('div');
-      newDivider.className = 'group-divider';
-      const newLabel = document.createElement('span');
-      newLabel.className = 'group-label';
-      newLabel.textContent = targetLabel;
-      newDivider.appendChild(newLabel);
-      const newCount = document.createElement('span');
-      newCount.className = 'group-count';
-      newCount.textContent = '1';
-      newDivider.appendChild(newCount);
+      const newSection = buildGroupSection({ label: targetLabel, items: [] }, window.search.getQuery(), false);
+      const inner = newSection.querySelector('.group-items-inner');
+      const count = newSection.querySelector('.group-count');
+      inner.insertBefore(card, inner.firstChild);
+      if (count) count.textContent = '1';
       if (refNode) {
-        cardList.insertBefore(newDivider, refNode);
-        cardList.insertBefore(card, refNode);
+        cardList.insertBefore(newSection, refNode);
       } else {
-        cardList.appendChild(newDivider);
-        cardList.appendChild(card);
+        cardList.appendChild(newSection);
       }
     }
 
@@ -390,9 +456,13 @@ window.ui = (() => {
 
     card.classList.add('removing');
     setTimeout(() => {
+      const group = card.closest('.group');
       card.remove();
+      if (group && !group.querySelector('.clip-card')) {
+        group.remove();
+      }
       updateCount();
-      if (cardList.children.length <= 1) {
+      if (!cardList.querySelector('.clip-card') && !cardList.querySelector('.group')) {
         emptyState.style.display = 'flex';
       }
     }, 250);
@@ -750,5 +820,5 @@ window.ui = (() => {
     closeFilterPanel();
   }
 
-  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showClearAllDialog, showError, setLoadEntries, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit, showFilterPanel, hideFilterPanel, updateFilterBadge, renderFilterList, showLoading, flashCopied, updateCount };
+  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showClearAllDialog, showError, setLoadEntries, setCollapsedSections, setCollapsePersist, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit, showFilterPanel, hideFilterPanel, updateFilterBadge, renderFilterList, showLoading, flashCopied, updateCount };
 })();
