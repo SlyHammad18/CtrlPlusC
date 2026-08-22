@@ -494,6 +494,34 @@
   opacity: 0.9;
 }
 
+.group-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.group-divider:hover .group-delete-btn,
+.group-delete-btn:focus-visible {
+  opacity: 0.6;
+}
+
+.group-delete-btn:hover {
+  opacity: 1 !important;
+  color: var(--danger);
+  background: rgb(229 72 77 / 0.1);
+}
+
 .group-divider:focus-visible {
   outline: 1px solid rgb(var(--accent-rgb) / 0.45);
   outline-offset: -1px;
@@ -527,6 +555,8 @@
   .group-items-inner,
   .group-chevron,
   .group-rule,
+  .group-label,
+  .group-delete-btn {
   .group-label {
     transition: none;
   }

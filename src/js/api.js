@@ -32,6 +32,9 @@ window.api = (() => {
     deleteEntry: (id) =>
       invoke('delete_entry', { id }),
 
+    deleteGroup: (label) =>
+      invoke('delete_group', { label }),
+
     clearAll: (keepPinned = false) =>
       invoke('clear_all', { keepPinned }),
 
