@@ -90,6 +90,9 @@ window.ui = (() => {
   const CHEVRON_SVG =
     '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>';
 
+  const TRASH_SVG =
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+
   let collapsedSections = new Set();
   let collapsePersistRef = null;
 
@@ -157,6 +160,35 @@ window.ui = (() => {
     const rule = document.createElement('span');
     rule.className = 'group-rule';
     divider.appendChild(rule);
+
+    if (group.label !== 'Pinned') {
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'group-delete-btn';
+      delBtn.title = 'Delete all ' + group.label.toLowerCase() + ' entries';
+      delBtn.setAttribute('aria-label', 'Delete all ' + group.items.length + ' entries in ' + group.label);
+      delBtn.innerHTML = TRASH_SVG;
+      let deleting = false;
+      delBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (deleting || group.items.length === 0) return;
+        const confirmed = await window.ui.showConfirm(
+          'Delete all ' + group.items.length + ' entries from ' + group.label + '?'
+        );
+        if (!confirmed) return;
+        deleting = true;
+        try {
+          const n = await window.api.deleteGroup(group.label);
+          window.ui.showToast(n === 1 ? '1 entry deleted' : n + ' entries deleted', 2500);
+          loadEntriesRef(window.search && window.search.getQuery ? window.search.getQuery() : '');
+        } catch (err) {
+          console.error('Failed to delete group:', err);
+          deleting = false;
+          window.ui.showToast('Delete failed');
+        }
+      });
+      divider.appendChild(delBtn);
+    }
 
     const body = document.createElement('div');
     body.className = 'group-items';

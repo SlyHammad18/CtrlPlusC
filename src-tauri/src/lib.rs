@@ -348,6 +348,41 @@ fn get_app_names(state: State<'_, Arc<Database>>) -> Result<Vec<String>, String>
     state.get_app_names()
 }
 
+/// Compute the UTC [start, end) timestamp bounds for a UI date-group label,
+/// mirroring the frontend's `getGroupLabel()` bucketing exactly:
+/// timestamps are stored UTC ('YYYY-MM-DD HH:MM:SS') and compared against
+/// *local* midnight boundaries.
+fn group_range_utc(label: &str) -> Result<(String, Option<String>), String> {
+    use chrono::{Datelike, Duration, Local};
+
+    let now = Local::now();
+    let today_midnight = now.date_naive().and_hms_opt(0, 0, 0).unwrap();
+    let fmt = |d: chrono::NaiveDateTime| -> String {
+        d.and_local_timezone(Local)
+            .unwrap()
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string()
+    };
+
+    let week_start = today_midnight
+        - Duration::days(today_midnight.weekday().num_days_from_sunday() as i64);
+
+    match label {
+        "Today" => Ok((fmt(today_midnight), None)),
+        "Yesterday" => Ok((fmt(today_midnight - Duration::days(1)), Some(fmt(today_midnight)))),
+        "This Week" => Ok((fmt(week_start), Some(fmt(today_midnight)))),
+        "Last Week" => Ok((fmt(week_start - Duration::days(7)), Some(fmt(week_start)))),
+        "Older" => Ok(("0000-01-01 00:00:00".to_string(), Some(fmt(week_start - Duration::days(7))))),
+        _ => Err(format!("Unknown group: {}", label)),
+    }
+}
+
+#[tauri::command]
+fn delete_group(state: State<'_, Arc<Database>>, label: String) -> Result<u32, String> {
+    let (start, end) = group_range_utc(&label)?;
+    state.delete_in_range(&start, end.as_deref())
+}
+
 /// Report how paste focus is managed on this session:
 /// `"x11"` (xdotool focus restore), `"extension"` (window-calls extension),
 /// or `"no-focus"` (no extension: picker never takes focus, mouse-only).
@@ -1188,6 +1223,7 @@ pub fn run() {
             add_entry,
             get_entries,
             delete_entry,
+            delete_group,
             clear_all,
             toggle_pin,
             update_entry,

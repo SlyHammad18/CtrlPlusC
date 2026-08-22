@@ -316,6 +316,25 @@ impl Database {
         Ok(())
     }
 
+    pub fn delete_in_range(&self, start: &str, end: Option<&str>) -> Result<u32, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = match end {
+            Some(end) => conn
+                .execute(
+                    "DELETE FROM entries WHERE is_pinned = 0 AND timestamp >= ?1 AND timestamp < ?2",
+                    params![start, end],
+                )
+                .map_err(|e| e.to_string())?,
+            None => conn
+                .execute(
+                    "DELETE FROM entries WHERE is_pinned = 0 AND timestamp >= ?1",
+                    params![start],
+                )
+                .map_err(|e| e.to_string())?,
+        };
+        Ok(affected as u32)
+    }
+
     pub fn toggle_pin(&self, id: i64) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -410,6 +429,65 @@ mod tests {
         db.toggle_pin(entry.id).unwrap();
         let entries = db.get_entries(None, None, None).unwrap();
         assert!(!entries[0].is_pinned);
+    }
+
+    #[test]
+    fn test_delete_in_range_today() {
+        let db = Database::new_in_memory().unwrap();
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO entries (content, content_type, preview, timestamp) VALUES ('in today', 'text', 'in today', datetime('now', '-1 hour'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO entries (content, content_type, preview, timestamp) VALUES ('before today', 'text', 'before today', datetime('now', '-2 days'))",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let start = chrono::Local::now().date_naive().and_hms_opt(0, 0, 0).unwrap();
+        let start_utc = start
+            .and_local_timezone(chrono::Local)
+            .unwrap()
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let deleted = db.delete_in_range(&start_utc, None).unwrap();
+        assert_eq!(deleted, 1);
+        let remaining = db.get_entries(None, None, None).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].content, "before today");
+    }
+
+    #[test]
+    fn test_delete_in_range_yesterday_excludes_pinned() {
+        let db = Database::new_in_memory().unwrap();
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO entries (content, content_type, preview, timestamp) VALUES ('yesterday normal', 'text', 'yesterday normal', datetime('now', '-1 day', '-2 hours'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO entries (content, content_type, preview, timestamp, is_pinned) VALUES ('yesterday pinned', 'text', 'yesterday pinned', datetime('now', '-1 day', '-3 hours'), 1)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let local_now = chrono::Local::now();
+        let today_start = local_now.date_naive().and_hms_opt(0, 0, 0).unwrap();
+        let yesterday_start = (local_now.date_naive() - chrono::Duration::days(1)).and_hms_opt(0, 0, 0).unwrap();
+        let fmt =
+            |d: chrono::NaiveDateTime| d.and_local_timezone(chrono::Local).unwrap().format("%Y-%m-%d %H:%M:%S").to_string();
+        let deleted = db
+            .delete_in_range(&fmt(yesterday_start), Some(&fmt(today_start)))
+            .unwrap();
+        assert_eq!(deleted, 1);
+        let remaining = db.get_entries(None, None, None).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].content, "yesterday pinned");
     }
 
     #[test]

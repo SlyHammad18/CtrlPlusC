@@ -4,6 +4,25 @@
 
 ---
 
+## [Feature] — Per-Section Bulk Delete (Delete All Entries in a Day Group) — 2026-08-22
+
+### ✅ What Changed
+- **New delete button on every date-group header** (Today / Yesterday / This Week / Last Week / Older; Pinned excluded): hover-revealed trash icon after the hairline rule, danger-red on hover, `aria-label` with entry count. Click asks "Delete all N entries from <group>?" via the existing confirm dialog, then reloads.
+- **Backend:** `Database::delete_in_range(start, end)` — deletes unpinned rows in a UTC timestamp range and returns the count. New `delete_group` Tauri command computes bounds in Rust mirroring the frontend `getGroupLabel()` bucketing exactly (local midnights converted to UTC strings; Sunday-based week start). Group hairline switched from `::after` pseudo-element to a real `.group-rule` span so the button can render after it.
+- Frontend `api.deleteGroup(label)` wrapper added.
+- Tests: `test_delete_in_range_today`, `test_delete_in_range_yesterday_excludes_pinned`.
+
+### ⏭️ What Was Not Changed
+- Pinned entries are never deleted by a group delete; single-entry delete and clear-all behavior unchanged.
+
+### ❌ Errors Faced
+- None.
+
+### 📝 Notes
+- Depends on the collapsible-sections render restructure (`section.group > button.group-divider + .group-items`), so this branch is stacked on `feat/collapsible-groups-v2`.
+
+---
+
 ## [Feature] — Collapsible History Sections (Pinned / Today / Yesterday / …) — 2026-08-22
 
 ### ✅ What Changed
