@@ -4,6 +4,38 @@
 
 ---
 
+## [Feature] — Collapsible History Sections (Pinned / Today / Yesterday / …) — 2026-08-22
+
+### ✅ What Changed
+- **All six group sections are now collapsible:** `Pinned`, `Today`, `Yesterday`, `This Week`, `Last Week`, `Older`. The group divider row became a full-width disclosure `<button>` (`role` semantics + `aria-expanded` + `aria-controls`), with a chevron that rotates 90° on toggle and a count pill that stays visible while collapsed.
+- **State persists in config.toml:** new `[ui]` section with `collapsed_sections = ["Yesterday", ...]` — `UiConfig { collapsed_sections: Vec<String> }` added to `Config` in `src-tauri/src/config.rs` (serde defaults, no new Tauri command; reuses `get_config`/`save_config`). Frontend loads it at startup (`app.js`) and saves debounced (300ms) on every toggle.
+- **Smooth collapse animation** without JS height measurement: `.group-items` uses the CSS `grid-template-rows: 1fr → 0fr` technique (180ms cubic-bezier), cards fade via wrapper clipping; chevron rotation 160ms transform-only. All gated behind `prefers-reduced-motion`.
+- **Render restructure (`src/js/ui.js`):** each group now renders as `section.group > button.group-divider + .group-items > .group-items-inner > cards`. New helpers `buildGroupSection()` / `toggleSection()`; collapse state held in an in-memory `Set`, exposed via `ui.setCollapsedSections()` / `ui.setCollapsePersist()`.
+- **Search auto-expands:** when a query is active, all groups render expanded regardless of persisted state, and header clicks are ignored mid-search so results can't hide behind a fold; persisted state restores when the query clears.
+- **Incremental insert updated:** `prependCard()` inserts into the target group's body (newest-first), bumps its count pill, respects collapsed state (does not force-expand), and creates new groups via `buildGroupSection()` honoring saved state.
+- **Keyboard nav fixed for collapsed groups:** arrow-key navigation filters out cards inside `.group.collapsed` sections (previously would have selected invisible cards).
+- **Empty-group cleanup:** deleting a section's last card removes the whole group header (no orphan dividers with stale counts).
+
+### ⏭️ What Was Not Changed
+- Backend clipboard/database/hotkey logic untouched; no new dependencies (frontend stays framework-free).
+- Existing visual language preserved: same mono uppercase labels, count pill, hairline rule; global `:focus-visible` accent ring reused for header keyboard focus.
+- Group ordering and date bucketing logic unchanged.
+
+### ❌ Errors Faced
+- First `npm run tauri dev` exited with "Ctrl+C is already running" (single-instance guard vs. the user's running instance); relaunched via the fresh debug binary after cleanup.
+
+### 📝 Notes
+- Verification: `cargo check` clean; `cargo test --lib` 36/37 pass (1 pre-existing Wayland-env failure `hotkey::tests::test_wayland_not_set`); `node --check` passes on `ui.js`/`app.js`; app launches and runs from `target/debug/ctrl-c`. Manual UI pass pending: toggle sections → restart app → state survives; copy something into a collapsed Today group → count bumps without expanding.
+- **UI review follow-up (same day):** screenshot review confirmed chevron direction, badge alignment, hairlines, spacing, and search-expansion all correct; "Yesterday truncated" report was a false alarm (cards continue below the fixed footer). Fixed the one real issue: the global `:focus-visible` outline rendered as a full-width glowing bar under a toggled group header — `.group-divider:focus-visible` now uses a quiet inset ring (`1px` accent @ 45%, offset -1px) instead.
+- **Collapse strip fix (same day):** collapsed sections leaked a ~4px strip showing the first card's top border — `.group-items-inner`'s `padding: 2px 0` survives the `0fr` row collapse (padding doesn't collapse with height). Now zeroed under `.group.collapsed`, with padding added to the 180ms transition so it eases during toggle.
+- **Collapsed groups are now inert + per-section delete (same day):**
+  - Collapsed sections no longer leak focus: `.group-items` gets the `inert` attribute while collapsed (removed from Tab order and screen-reader tree), the selected card is deselected on collapse, and keyboard nav validates stale selections (`validateSelection`) so Enter/Delete can't act on invisible entries.
+  - New delete button on every date-group header (Today / Yesterday / This Week / Last Week / Older; Pinned excluded): hover-revealed trash icon after the hairline rule, danger-red on hover, `aria-label` with entry count. Click asks "Delete all N entries from <group>?" via the existing confirm dialog, then calls the new backend command.
+  - Backend: `Database::delete_in_range(start, end)` — deletes unpinned rows in a UTC timestamp range and returns the count. New `delete_group` Tauri command computes bounds in Rust mirroring the frontend `getGroupLabel()` bucketing exactly (local midnights converted to UTC strings; Sunday-based week start). Group hairline switched from `::after` pseudo-element to a real `.group-rule` span so the button can render after it. Tests: `test_delete_in_range_today`, `test_delete_in_range_yesterday_excludes_pinned`.
+
+---
+
+
 ## [Release] — v0.2.0 Published (.deb + .tar.gz) — 2026-08-21
 
 ### ✅ What Changed

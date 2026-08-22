@@ -143,6 +143,20 @@ impl Default for HotkeyConfig {
 fn default_toggle_window() -> String { "Alt+V".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiConfig {
+    #[serde(default)]
+    pub collapsed_sections: Vec<String>,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        UiConfig {
+            collapsed_sections: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub theme: ThemeConfig,
@@ -152,6 +166,8 @@ pub struct Config {
     pub behavior: BehaviorConfig,
     #[serde(default)]
     pub hotkey: HotkeyConfig,
+    #[serde(default)]
+    pub ui: UiConfig,
     #[serde(default = "default_autostart")]
     pub autostart: bool,
     #[serde(default)]
@@ -167,6 +183,7 @@ impl Default for Config {
             window: WindowConfig::default(),
             behavior: BehaviorConfig::default(),
             hotkey: HotkeyConfig::default(),
+            ui: UiConfig::default(),
             autostart: default_autostart(),
             private_mode_password_hash: String::new(),
             private_mode_locked: false,
@@ -238,13 +255,25 @@ mod tests {
 
     #[test]
     fn test_config_roundtrip() {
-        let config = Config::default();
+        let mut config = Config::default();
+        config.ui.collapsed_sections = vec!["Yesterday".to_string(), "Older".to_string()];
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let parsed: Config = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.theme.bg_primary, config.theme.bg_primary);
         assert_eq!(parsed.window.width, config.window.width);
         assert_eq!(parsed.behavior.poll_interval_ms, config.behavior.poll_interval_ms);
         assert_eq!(parsed.hotkey.toggle_window, config.hotkey.toggle_window);
+        assert_eq!(parsed.ui.collapsed_sections, config.ui.collapsed_sections);
+    }
+
+    #[test]
+    fn test_ui_config_defaults_when_missing() {
+        let partial = r##"
+            [theme]
+            bg_primary = "#FF0000"
+        "##;
+        let config: Config = toml::from_str(partial).unwrap();
+        assert!(config.ui.collapsed_sections.is_empty());
     }
 
     #[test]

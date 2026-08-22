@@ -1,6 +1,24 @@
 (async () => {
   const config = await window.theme.load();
 
+  if (config && config.ui && Array.isArray(config.ui.collapsed_sections)) {
+    window.ui.setCollapsedSections(config.ui.collapsed_sections);
+  }
+
+  let collapsedSaveTimer = null;
+  window.ui.setCollapsePersist((sections) => {
+    clearTimeout(collapsedSaveTimer);
+    collapsedSaveTimer = setTimeout(async () => {
+      try {
+        const cfg = await window.api.getConfig();
+        cfg.ui = { collapsed_sections: sections };
+        await window.api.saveConfig(cfg);
+      } catch (err) {
+        console.error('Failed to save section state:', err);
+      }
+    }, 300);
+  });
+
   async function loadEntries(query, filter) {
     try {
       const app = window.search.getAppFilter();
