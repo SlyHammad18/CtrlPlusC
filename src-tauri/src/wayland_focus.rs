@@ -50,6 +50,7 @@ static FOCUS_MODE: OnceLock<FocusMode> = OnceLock::new();
 #[derive(Debug, Clone)]
 pub struct WaylandTarget {
     pub id: u32,
+    pub pid: u32,
     pub wm_class: String,
     pub wm_class_instance: String,
 }
@@ -113,7 +114,7 @@ fn probe() -> FocusMode {
 }
 
 /// Ask window-calls which window currently has focus.
-fn focused_window() -> Result<WaylandTarget, String> {
+pub fn focused_window() -> Result<WaylandTarget, String> {
     let out = dbus_send("List", &[])?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let root = parse_json(&stdout)?;
@@ -126,6 +127,7 @@ fn focused_window() -> Result<WaylandTarget, String> {
             }
             let title = w.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let _ = title;
+            let pid = w.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
             let wm_class = w.get("wm_class").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let wm_class_instance = w
                 .get("wm_class_instance")
@@ -134,6 +136,7 @@ fn focused_window() -> Result<WaylandTarget, String> {
                 .to_string();
             return Ok(WaylandTarget {
                 id,
+                pid,
                 wm_class,
                 wm_class_instance,
             });

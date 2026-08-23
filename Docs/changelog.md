@@ -4,6 +4,30 @@
 
 ---
 
+## [Linux] — App Name Resolution (X11 + Wayland) — 2026-08-23
+
+### ✅ What Changed
+- Added `src-tauri/src/app_name.rs`: resolves a friendly application name from a pid (+ optional Wayland app-id) by matching the process against installed `.desktop` files (`Name=`/`Exec=`/`StartupWMClass=`/desktop-id), with fallback to the executable basename. `.desktop` files are scanned once and cached via `OnceLock`.
+- `src-tauri/src/wayland_focus.rs`: added `pid` to `WaylandTarget` and parse `pid` in `focused_window()`; made `focused_window()` `pub` so the clipboard path can read the focused window's pid.
+- `src-tauri/src/lib.rs`: `get_foreground_app()` now branches on session type (`hotkey::is_wayland()`):
+  - **Wayland (GNOME + window-calls extension):** uses `wayland_focus::focused_window()` → `app_name::resolve_linux_app_name(pid, wm_class_instance)`. Previously returned `""` (xdotool is X11-only), so no app names were ever captured on Wayland.
+  - **X11:** keeps `xdotool getactivewindow getwindowpid` but now resolves a friendly name via the `.desktop` lookup instead of the raw `/proc/<pid>/comm` kernel name.
+- `src/js/ui.js`: `formatAppName()` now returns the name as-is when no map entry exists (instead of naive title-casing), so friendly backend names like "GNOME Terminal" are not mangled. The `APP_NAME_MAP` still handles legacy raw entries already in the DB.
+- Added unit tests for `exec_binary`, `kv`, and `prettify` parsing.
+
+### ⏭️ What Was Not Changed
+- Windows app-name path (`get_foreground_app` Win32 branch) untouched.
+- Non-GNOME Wayland (KDE/Sway without the window-calls extension) remains best-effort empty — consistent with the existing GNOME-extension dependency for focus.
+
+### ❌ Errors Faced
+- `exec_binary` test initially failed on `env GTK_DEBUG=interactive gnome-terminal` (returned "env"); fixed by explicitly consuming a leading `env` token before skipping `KEY=VALUE` assignments.
+
+### 📝 Notes
+- Per-copy cost is a single pid read (X11) or one cached D-Bus query (Wayland); `.desktop` scan is one-time.
+- Verify on X11: copy from Firefox/Terminal → card shows "Firefox"/"GNOME Terminal". On Wayland (GNOME + window-calls): previously-blank app names now populate.
+
+---
+
 ## [UI] — Search Shortcut Key-Cap Styling — 2026-08-23
 
 ### ✅ What Changed

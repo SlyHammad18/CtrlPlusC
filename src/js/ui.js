@@ -80,7 +80,9 @@ function formatAppName(name) {
   if (!name) return '';
   const lower = name.toLowerCase().replace(/\.exe$/, '');
   if (APP_NAME_MAP[lower]) return APP_NAME_MAP[lower];
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
+  // Backend now stores friendly names (e.g. "GNOME Terminal"); return as-is
+  // so we don't mangle them with naive title-casing.
+  return name.trim();
 }
 
 window.ui = (() => {

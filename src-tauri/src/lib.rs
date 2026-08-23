@@ -1,3 +1,4 @@
+mod app_name;
 mod autostart;
 mod clipboard;
 mod config;
@@ -630,19 +631,29 @@ fn get_foreground_app() -> String {
 
     #[cfg(target_os = "linux")]
     {
+        if hotkey::is_wayland() {
+            // xdotool cannot see Wayland-native windows. Use the window-calls
+            // GNOME extension (already used for focus management) to obtain the
+            // focused window's pid + app-id, then resolve a friendly name.
+            if wayland_focus::mode() == wayland_focus::FocusMode::Extension {
+                if let Ok(target) = wayland_focus::focused_window() {
+                    return app_name::resolve_linux_app_name(target.pid, &target.wm_class_instance);
+                }
+            }
+            // NoExtension (non-GNOME / extension missing): no reliable capture.
+            return String::new();
+        }
+
+        // X11: xdotool can read the active window's pid directly.
         if let Ok(out) = std::process::Command::new("xdotool")
             .args(["getactivewindow", "getwindowpid"])
             .output()
         {
             if out.status.success() {
-                let pid = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !pid.is_empty() {
-                    let comm_path = format!("/proc/{}/comm", pid);
-                    if let Ok(comm) = std::fs::read_to_string(&comm_path) {
-                        let name = comm.trim().to_string();
-                        if !name.is_empty() {
-                            return name;
-                        }
+                if let Ok(pid) = String::from_utf8_lossy(&out.stdout).trim().parse::<u32>() {
+                    let name = app_name::resolve_linux_app_name(pid, "");
+                    if !name.is_empty() {
+                        return name;
                     }
                 }
             }
