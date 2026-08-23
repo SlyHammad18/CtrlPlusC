@@ -51,10 +51,6 @@
   }
 }
 
-.clip-card {
-  animation: fadeIn 0.22s ease both;
-}
-
 .clip-card.entering {
   animation: slideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
