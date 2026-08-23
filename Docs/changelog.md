@@ -4,6 +4,41 @@
 
 ---
 
+## [UI] — Search Shortcut Key-Cap Styling — 2026-08-23
+
+### ✅ What Changed
+- Restyled the search bar shortcut hint (`src/index.html:30`) from plain `Ctrl /` text into bordered key caps: `Ctrl` and `/` each wrapped in `<kbd class="kbd-cap">`, separated by a `+` (`<span class="kbd-plus">`).
+- Added `.kbd-cap` (bordered chip: `var(--border-card)`, `var(--bg-card)`, 4px radius, padding) and `.kbd-plus` (muted `+`) styles in `src/styles/main.css`; `.search-kbd` is now a flex row.
+- Verified visually via served frontend: `Ctrl` `[Ctrl] + [/]` key caps render right-aligned in the search input and still hide on typing (no JS change needed — `search.js` toggles `#search-kbd` display only).
+
+### ⏭️ What Was Not Changed
+- No JS logic or hotkey behavior changed; the `Ctrl+/` shortcut itself is untouched (`app.js`).
+
+### ❌ Errors Faced
+- None.
+
+### 📝 Notes
+- Screenshot reviewed via `opencode_see` confirmed the original hint was plain text with no borders/`+`, which this change addresses.
+
+---
+
+## [Build] — Release .deb Bundle — 2026-08-23
+
+### ✅ What Changed
+- Built the release Debian package via `npm run tauri build`: `src-tauri/target/release/bundle/deb/Ctrl+C_0.2.0_amd64.deb` (5.1 MB, amd64, installed-size ~17.9 MB).
+- Package metadata verified with `dpkg-deb --info`: package `ctrl-c` v0.2.0, depends `libc6`, `libgtk-3-0`, `libwebkit2gtk-4.1-0`, `libayatana-appindicator3-1`, `librsvg2-2`, `xdotool`.
+
+### ⏭️ What Was Not Changed
+- No source/config changes; bundle target was already `["deb"]` in `tauri.conf.json`.
+
+### ❌ Errors Faced
+- First build attempt failed: the Tauri build-script output cached under `target/release/build/` referenced absolute paths from the old project location (`/home/hammad/Coding/CtrlPlusC/...`) → "failed to read plugin permissions … app_hide.toml: No such file or directory". Fixed by running `cargo clean` in `src-tauri/` and rebuilding from scratch (~5m18s).
+
+### 📝 Notes
+- Existing warning persists: identifier `com.ctrl-c.app` ends in `.app` (macOS bundle-extension conflict); harmless for Linux builds but worth renaming before any macOS target.
+
+---
+
 ## [Fix] — Group Headers Unfocusable + Collapsed-Group Keyboard Nav — 2026-08-22
 
 ### ✅ What Changed
