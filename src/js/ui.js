@@ -90,6 +90,20 @@ window.ui = (() => {
   const CHEVRON_SVG =
     '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>';
 
+  const imageObserver = new IntersectionObserver((entries, obs) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const img = entry.target;
+      obs.unobserve(img);
+      const id = img.dataset.imageId;
+      if (id) {
+        window.api.getEntryImage(parseInt(id)).then((dataUri) => {
+          if (dataUri) img.src = dataUri;
+        }).catch(() => {});
+      }
+    });
+  }, { root: cardList, rootMargin: '300px 0px' });
+
   const TRASH_SVG =
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
 
@@ -262,6 +276,9 @@ window.ui = (() => {
       const img = document.createElement('img');
       img.className = 'clip-image-thumb';
       img.alt = 'Clipboard image';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.dataset.imageId = entry.id;
       imgWrap.appendChild(img);
 
       const imgLabel = document.createElement('div');
@@ -272,9 +289,7 @@ window.ui = (() => {
       card.appendChild(imgWrap);
       card.appendChild(imgLabel);
 
-      window.api.getEntryImage(entry.id).then((dataUri) => {
-        if (dataUri) img.src = dataUri;
-      }).catch(() => {});
+      imageObserver.observe(img);
 
       const preview = document.createElement('div');
       preview.className = 'clip-preview';

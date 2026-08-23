@@ -1035,11 +1035,27 @@
     console.error('Failed to check focus mode:', err);
   }
 
+  let isScrolling = false;
+  let scrollEndTimer = null;
+  let pendingClipboardEntry = null;
+  cardList.addEventListener('scroll', () => {
+    isScrolling = true;
+    clearTimeout(scrollEndTimer);
+    scrollEndTimer = setTimeout(() => {
+      isScrolling = false;
+      if (pendingClipboardEntry) {
+        window.ui.prependCard(pendingClipboardEntry);
+        pendingClipboardEntry = null;
+      }
+    }, 150);
+  }, { passive: true });
+
   setInterval(async () => {
     try {
       const entry = await window.api.checkClipboard();
       if (entry) {
-        window.ui.prependCard(entry);
+        if (isScrolling) pendingClipboardEntry = entry;
+        else window.ui.prependCard(entry);
       }
     } catch (err) {
       console.error('Clipboard check failed:', err);

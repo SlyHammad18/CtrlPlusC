@@ -327,6 +327,7 @@ body {
   padding: 10px;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+  contain: layout paint;
 }
 
 .card-list::-webkit-scrollbar {
