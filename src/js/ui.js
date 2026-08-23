@@ -136,6 +136,7 @@ window.ui = (() => {
 
     const divider = document.createElement('button');
     divider.type = 'button';
+    divider.tabIndex = -1;
     divider.className = 'group-divider';
     divider.setAttribute('aria-expanded', String(!collapsed));
     divider.setAttribute('aria-controls', itemsId);
