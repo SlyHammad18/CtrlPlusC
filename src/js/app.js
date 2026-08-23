@@ -981,6 +981,7 @@
       window.ui.hideEdit();
       document.getElementById('theme-overlay')?.classList.remove('visible');
       window.ui.hideFilterPanel();
+      window.search.clear();
 
       const cards = Array.from(cardList.querySelectorAll('.clip-card')).filter(
         (c) => !c.closest('.group.collapsed')

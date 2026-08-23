@@ -4,6 +4,7 @@ window.search = (() => {
   let currentFilter = 'all';
   let currentApp = '';
   let onSearchCallback = null;
+  let clearFn = null;
 
   const input = document.getElementById('search-input');
   const filterBtns = document.querySelectorAll('.filter-btn');
@@ -47,6 +48,15 @@ window.search = (() => {
         onSearchCallback(currentQuery, currentFilter);
       });
     });
+
+    function clearSearch() {
+      input.value = '';
+      currentQuery = '';
+      syncButtons();
+      if (onSearchCallback) onSearchCallback(currentQuery, currentFilter);
+    }
+
+    clearFn = clearSearch;
   }
 
   function getQuery() {
@@ -73,5 +83,5 @@ window.search = (() => {
     return text.replace(regex, '<span class="highlight">$1</span>');
   }
 
-  return { init, getQuery, getFilter, getAppFilter, setAppFilter, highlight };
+  return { init, getQuery, getFilter, getAppFilter, setAppFilter, highlight, clear: () => clearFn && clearFn() };
 })();
