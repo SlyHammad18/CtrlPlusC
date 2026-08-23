@@ -274,3 +274,9 @@ Database: SQLite (history.db)
 ## License
 
 [MIT](LICENSE)
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branching conventions, coding standards, and pull-request guidelines.
