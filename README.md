@@ -21,14 +21,34 @@
 
 **Ctrl+C** is a lightweight, privacy-first clipboard manager that lives in the system tray. It automatically captures clipboard history, supports search and filtering, pinning, private mode with password lock, and is fully themeable.
 
-Built with **Tauri v2** (Rust backend + Vanilla JS frontend) for a tiny memory footprint (~15 MB).
+Built with **Tauri v2** (Rust backend + vanilla JS frontend) for a tiny memory footprint (~15 MB).
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+  - [Windows](#windows)
+  - [Linux](#linux)
+- [Usage](#usage)
+  - [First Launch](#first-launch)
+  - [Global Hotkey](#global-hotkey)
+  - [Keyboard Shortcuts](#keyboard-shortcuts)
+  - [Private Mode](#private-mode)
+  - [Custom Themes](#custom-themes)
+- [Configuration](#configuration)
+- [Building from Source](#building-from-source)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Platform Support](#platform-support)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
 ## Features
 
 - **Clipboard History** — Automatically captures text and images from the clipboard (unlimited by default; optional cap in Settings)
-- **Search & Filter** — Real-time text search with highlighting, date filters (Today, Yesterday, 7d, 30d), and app source filtering
+- **Search & Filter** — Real-time text search with match highlighting, filtering by source app, and automatic date grouping (Today, Yesterday, This Week, Last Week, Older)
 - **Pin Entries** — Keep important items pinned — they are excluded from auto-eviction
 - **Private Mode** — Password-protect your clipboard with Argon2id hashing. When locked, clipboard monitoring pauses entirely
 - **Custom Themes** — 6 built-in presets (Graphite, Void Purple, Synthwave, Midnight Ocean, Cyberpunk Terminal, Arctic Frost) or create your own with the color picker
@@ -36,7 +56,7 @@ Built with **Tauri v2** (Rust backend + Vanilla JS frontend) for a tiny memory f
 - **System Tray** — Minimize to tray with Show/Hide, Lock Private Mode, and Quit menu
 - **Autostart** — Launch on login (toggle from Settings)
 - **Keyboard Navigation** — Arrow keys, Enter to copy, Delete to remove, keyboard shortcuts for all actions
-- **Source App Tracking** — See which application each clipboard entry came from, filter by app
+- **Source App Tracking** — See which application each clipboard entry came from, and filter by app
 
 ---
 
@@ -56,10 +76,13 @@ The app requires **WebView2** (pre-installed on Windows 10+).
 
 Download the `.deb` or `.tar.gz` from the [latest release](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.2.0).
 
-**Dependencies:**
-- **Arch:** `webkit2gtk`, `libappindicator-gtk3`
-- **Debian/Ubuntu:** `libwebkit2gtk-4.1-0`, `libappindicator3-1`
-- **Fedora:** `webkit2gtk4.1`, `libappindicator-gtk3`
+Install the required system libraries for your distribution:
+
+| Distro | Packages |
+|--------|----------|
+| **Arch** | `webkit2gtk-4.1`, `libappindicator-gtk3` |
+| **Debian / Ubuntu** | `libwebkit2gtk-4.1-0`, `libappindicator3-1` |
+| **Fedora** | `webkit2gtk4.1`, `libappindicator-gtk3` |
 
 ---
 
@@ -79,16 +102,14 @@ Default: **Alt+V** — toggle window show/hide.
 To change the hotkey, open Settings → click the hotkey display → press your desired key combination.
 
 > **Wayland note:** Global shortcuts depend on your desktop environment. On GNOME/KDE, the app attempts the `xdg-desktop-portal` GlobalShortcuts interface. If unavailable, you'll need to configure a custom keybind in your DE settings to run `ctrl-c toggle`.
->
-> **Auto-paste note:** Auto-paste simulates a paste keystroke after copying. On X11 it uses `xdotool`; on Wayland it tries `ydotool`, then native uinput (requires the `input` group), then `wtype`. In terminals it sends `Ctrl+Shift+V` automatically. If every method is unavailable, the entry is still copied to the clipboard and a toast explains what to install.
 
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
 | `Alt+V` | Toggle window (configurable) |
-| `↑`/`↓` | Navigate cards |
-| `←`/`→` | Focus action buttons |
+| `↑` / `↓` | Navigate cards |
+| `←` / `→` | Focus action buttons |
 | `Enter` | Copy selected entry |
 | `Delete` | Delete selected entry |
 | `P` | Toggle pin |
@@ -101,10 +122,12 @@ To change the hotkey, open Settings → click the hotkey display → press your 
 | `Ctrl+/` | Focus search |
 | `Escape` | Close overlays or hide window |
 
+> **Auto-paste note:** Auto-paste simulates a paste keystroke after copying. On X11 it uses `xdotool`; on Wayland it tries `ydotool`, then native uinput (requires the `input` group), then `wtype`. In terminals it sends `Ctrl+Shift+V` automatically. If every method is unavailable, the entry is still copied to the clipboard and a toast explains what to install.
+
 ### Private Mode
 
 1. Click the lock icon in the header (or press `Ctrl+L`).
-2. Set a password (minimum 4 characters).
+2. Set a password when prompted.
 3. The app locks — clipboard monitoring pauses, entries are hidden behind a lock screen.
 4. To unlock, enter your password.
 5. Lock state persists across restarts.
@@ -176,7 +199,6 @@ autostart = false
 ```bash
 git clone https://github.com/SlyHammad18/CtrlPlusC.git
 cd ctrl-c
-
 npm install
 ```
 
@@ -206,22 +228,23 @@ The built installer is in `src-tauri/target/release/bundle/`.
 Frontend (Vanilla HTML/CSS/JS)
   ├── index.html          — Main HTML shell
   ├── styles/             — CSS with custom properties for theming
-  │   ├── main.css        ─ Core layout
-  │   ├── cards.css       ─ Clipboard card components
-  │   ├── lock.css        ─ Private mode lock screen
-  │   ├── settings.css    ─ Settings panel + overlays
-  │   └── animations.css  ─ Micro-animations
+  │   ├── main.css        — Core layout
+  │   ├── cards.css       — Clipboard card components
+  │   ├── lock.css        — Private mode lock screen
+  │   ├── settings.css    — Settings panel + overlays
+  │   └── animations.css  — Micro-animations
   └── js/                 — Vanilla JS modules (no framework)
-      ├── app.js          ─ Main app logic & event wiring
-      ├── api.js          ─ Tauri IPC invoke wrappers
-      ├── theme.js        ─ Theme loading from config
-      ├── search.js       ─ Search & filter state
-      └── ui.js           ─ DOM manipulation helpers
+      ├── app.js          — Main app logic & event wiring
+      ├── api.js          — Tauri IPC invoke wrappers
+      ├── theme.js        — Theme loading from config
+      ├── search.js       — Search & filter state
+      └── ui.js           — DOM manipulation helpers
 
         │ Tauri IPC (invoke / events)
         ▼
 
 Backend (Rust)
+  ├── main.rs             — Entry point / CLI toggle
   ├── lib.rs              — Tauri setup, commands, tray, clipboard polling
   ├── clipboard.rs        — Clipboard monitor state & dedup tracking
   ├── database.rs         — SQLite CRUD, search, FIFO cleanup
@@ -229,7 +252,8 @@ Backend (Rust)
   ├── hotkey.rs           — Global shortcut parsing
   ├── private_mode.rs     — Argon2id password hash/verify
   ├── autostart.rs        — Registry (Win) / .desktop (Linux) autostart
-  └── main.rs             — Entry point
+  ├── paste.rs            — Cross-platform paste simulation & focus handling
+  └── wayland_focus.rs    — Wayland focus-mode detection (extension vs none)
 
 Database: SQLite (history.db)
   └── entries table: id, content, content_type, preview, image_data,
@@ -271,12 +295,10 @@ Database: SQLite (history.db)
 
 ---
 
-## License
-
-[MIT](LICENSE)
-
----
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branching conventions, coding standards, and pull-request guidelines.
+
+## License
+
+[MIT](LICENSE)
