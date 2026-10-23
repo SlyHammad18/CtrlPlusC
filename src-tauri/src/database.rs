@@ -14,6 +14,17 @@ pub struct Entry {
     pub is_private: bool,
     pub source_app: String,
     pub name: String,
+    pub folder_id: Option<i64>,
+    /// Folder the entry belongs to. Populated only when searching/filtering
+    /// (results span all folders), so cards can show their origin.
+    pub folder_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Folder {
+    pub id: i64,
+    pub name: String,
+    pub entry_count: i64,
 }
 
 pub struct Database {
@@ -31,7 +42,9 @@ fn truncate_preview(s: &str, max_chars: usize) -> String {
 }
 
 /// Map a DB row (id, content, content_type, preview, timestamp, is_pinned,
-/// is_private, source_app, name) to an Entry.
+/// is_private, source_app, name, folder_id, folder_name) to an Entry.
+/// `folder_name` is passed through as-is; SELECTs that don't need it select
+/// NULL for it.
 fn entry_from_row(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
     Ok(Entry {
         id: row.get(0)?,
@@ -43,12 +56,18 @@ fn entry_from_row(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
         is_private: row.get::<_, i32>(6)? != 0,
         source_app: row.get(7)?,
         name: row.get(8)?,
+        folder_id: row.get(9)?,
+        folder_name: row.get(10)?,
     })
 }
 
 impl Database {
     pub fn new(path: &str) -> Result<Self, String> {
         let conn = Connection::open(path).map_err(|e| e.to_string())?;
+        // Don't let a transiently-locked DB (another instance, stale WAL from
+        // a crash) block a command thread forever -- fail fast instead.
+        conn.busy_timeout(std::time::Duration::from_secs(2))
+            .map_err(|e| e.to_string())?;
         let db = Database {
             conn: Mutex::new(conn),
             max_entries: AtomicI64::new(0),
@@ -57,7 +76,9 @@ impl Database {
         Ok(db)
     }
 
-    #[cfg(test)]
+    /// In-memory database. Used as a fallback when the on-disk DB cannot be
+    /// opened (corrupt/locked after a crash): the app still runs, history is
+    /// just not persisted until the DB recovers.
     pub fn new_in_memory() -> Result<Self, String> {
         let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
         let db = Database {
@@ -97,6 +118,16 @@ impl Database {
         let _ = conn.execute("ALTER TABLE entries ADD COLUMN height INTEGER NOT NULL DEFAULT 0", []);
         let _ = conn.execute("ALTER TABLE entries ADD COLUMN source_app TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE entries ADD COLUMN name TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE entries ADD COLUMN folder_id INTEGER", []);
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS folders (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_folder ON entries(folder_id);",
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -159,6 +190,8 @@ impl Database {
             is_private,
             source_app: source_app.to_string(),
             name: String::new(),
+            folder_id: None,
+            folder_name: None,
         };
 
         drop(conn);
@@ -167,24 +200,49 @@ impl Database {
         Ok(entry)
     }
 
+    /// Fetch entries for the given view. `folder` selects the pane: `None`
+    /// returns unfiled history (folder members excluded), `Some(id)` returns
+    /// only that folder's entries.
+    ///
+    /// When ANY filter is active (search query, date filter, source app),
+    /// the folder restriction is dropped so results span all folders, and
+    /// each result carries its folder name (`folder_name`) so cards can
+    /// show where they came from.
     pub fn get_entries(
         &self,
         query: Option<&str>,
         date_filter: Option<&str>,
         source_app: Option<&str>,
+        folder: Option<i64>,
     ) -> Result<Vec<Entry>, String> {
+        let filtering = query.map(|q| !q.is_empty()).unwrap_or(false)
+            || date_filter.map(|f| !f.is_empty()).unwrap_or(false)
+            || source_app.map(|a| !a.is_empty()).unwrap_or(false);
+
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut sql = String::from(
-            "SELECT id, content, content_type, preview, timestamp, is_pinned, is_private, source_app, name FROM entries WHERE 1=1",
+            "SELECT e.id, e.content, e.content_type, e.preview, e.timestamp, e.is_pinned, e.is_private, e.source_app, e.name, e.folder_id, f.name FROM entries e
+             LEFT JOIN folders f ON e.folder_id = f.id
+             WHERE 1=1",
         );
         let mut param_values: Vec<String> = Vec::new();
+
+        if !filtering {
+            match folder {
+                Some(id) => {
+                    sql.push_str(" AND e.folder_id = ?");
+                    param_values.push(id.to_string());
+                }
+                None => sql.push_str(" AND e.folder_id IS NULL"),
+            }
+        }
 
         if let Some(q) = query {
             if !q.is_empty() {
                 sql.push_str(" AND (");
-                sql.push_str("(content_type = 'text' AND content LIKE ?)");
+                sql.push_str("(e.content_type = 'text' AND e.content LIKE ?)");
                 param_values.push(format!("%{}%", q));
-                sql.push_str(" OR name LIKE ?");
+                sql.push_str(" OR e.name LIKE ?");
                 param_values.push(format!("%{}%", q));
                 sql.push_str(")");
             }
@@ -192,7 +250,7 @@ impl Database {
 
         if let Some(app) = source_app {
             if !app.is_empty() {
-                sql.push_str(" AND source_app = ?");
+                sql.push_str(" AND e.source_app = ?");
                 param_values.push(app.to_string());
             }
         }
@@ -208,16 +266,16 @@ impl Database {
             if !date_cond.is_empty() {
                 if filter == "yesterday" {
                     sql.push_str(&format!(
-                        " AND timestamp >= {} AND timestamp < datetime('now', 'start of day')",
+                        " AND e.timestamp >= {} AND e.timestamp < datetime('now', 'start of day')",
                         date_cond
                     ));
                 } else {
-                    sql.push_str(&format!(" AND timestamp >= {}", date_cond));
+                    sql.push_str(&format!(" AND e.timestamp >= {}", date_cond));
                 }
             }
         }
 
-        sql.push_str(" ORDER BY is_pinned DESC, timestamp DESC");
+        sql.push_str(" ORDER BY e.is_pinned DESC, e.timestamp DESC");
         let max_entries = self.max_entries.load(Ordering::Relaxed);
         if max_entries > 0 {
             sql.push_str(&format!(" LIMIT {}", max_entries));
@@ -243,7 +301,7 @@ impl Database {
     pub fn get_entry(&self, id: i64) -> Result<Option<Entry>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare("SELECT id, content, content_type, preview, timestamp, is_pinned, is_private, source_app, name FROM entries WHERE id = ?1")
+            .prepare("SELECT id, content, content_type, preview, timestamp, is_pinned, is_private, source_app, name, folder_id, NULL FROM entries WHERE id = ?1")
             .map_err(|e| e.to_string())?;
         let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
         match rows.next().map_err(|e| e.to_string())? {
@@ -309,6 +367,16 @@ impl Database {
 
     pub fn delete_entry(&self, id: i64) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let folder_id: Option<i64> = conn
+            .query_row(
+                "SELECT folder_id FROM entries WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "Entry not found".to_string())?;
+        if folder_id.is_some() {
+            return Err("Entry is in a folder — remove it from the folder first".to_string());
+        }
         conn.execute("DELETE FROM entries WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -332,9 +400,11 @@ impl Database {
     pub fn clear_all(&self, keep_pinned: bool) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         if keep_pinned {
-            conn.execute("DELETE FROM entries WHERE is_pinned = 0", []).map_err(|e| e.to_string())?;
+            conn.execute("DELETE FROM entries WHERE is_pinned = 0 AND folder_id IS NULL", [])
+                .map_err(|e| e.to_string())?;
         } else {
-            conn.execute("DELETE FROM entries", []).map_err(|e| e.to_string())?;
+            conn.execute("DELETE FROM entries WHERE folder_id IS NULL", [])
+                .map_err(|e| e.to_string())?;
         }
         Ok(())
     }
@@ -344,13 +414,13 @@ impl Database {
         let affected = match end {
             Some(end) => conn
                 .execute(
-                    "DELETE FROM entries WHERE is_pinned = 0 AND timestamp >= ?1 AND timestamp < ?2",
+                    "DELETE FROM entries WHERE is_pinned = 0 AND folder_id IS NULL AND timestamp >= ?1 AND timestamp < ?2",
                     params![start, end],
                 )
                 .map_err(|e| e.to_string())?,
             None => conn
                 .execute(
-                    "DELETE FROM entries WHERE is_pinned = 0 AND timestamp >= ?1",
+                    "DELETE FROM entries WHERE is_pinned = 0 AND folder_id IS NULL AND timestamp >= ?1",
                     params![start],
                 )
                 .map_err(|e| e.to_string())?,
@@ -368,6 +438,109 @@ impl Database {
         Ok(())
     }
 
+    // --- Folders ---
+
+    pub fn get_folders(&self) -> Result<Vec<Folder>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT f.id, f.name, COUNT(e.id) FROM folders f
+                 LEFT JOIN entries e ON e.folder_id = f.id
+                 GROUP BY f.id, f.name, f.created_at
+                 ORDER BY f.name COLLATE NOCASE ASC, f.id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(Folder {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    entry_count: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut folders = Vec::new();
+        for row in rows {
+            folders.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(folders)
+    }
+
+    pub fn create_folder(&self, name: &str) -> Result<Folder, String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("Folder name cannot be empty".to_string());
+        }
+        if name.chars().count() > 64 {
+            return Err("Folder name too long (max 64 characters)".to_string());
+        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO folders (name) VALUES (?1)",
+            params![name],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(Folder {
+            id: conn.last_insert_rowid(),
+            name: name.to_string(),
+            entry_count: 0,
+        })
+    }
+
+    pub fn rename_folder(&self, id: i64, name: &str) -> Result<(), String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("Folder name cannot be empty".to_string());
+        }
+        if name.chars().count() > 64 {
+            return Err("Folder name too long (max 64 characters)".to_string());
+        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = conn
+            .execute("UPDATE folders SET name = ?1 WHERE id = ?2", params![name, id])
+            .map_err(|e| e.to_string())?;
+        if affected == 0 {
+            return Err("Folder not found".to_string());
+        }
+        Ok(())
+    }
+
+    /// Delete a folder. Its entries are kept -- they return to unfiled history.
+    pub fn delete_folder(&self, id: i64) -> Result<(), String> {
+        let mut conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        tx.execute("UPDATE entries SET folder_id = NULL WHERE folder_id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        let affected = tx
+            .execute("DELETE FROM folders WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        if affected == 0 {
+            return Err("Folder not found".to_string());
+        }
+        Ok(())
+    }
+
+    /// Move an entry into a folder, or out of any folder with `folder_id = None`.
+    pub fn move_entry_to_folder(&self, entry_id: i64, folder_id: Option<i64>) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        if let Some(fid) = folder_id {
+            let exists: i64 = conn
+                .query_row("SELECT COUNT(*) FROM folders WHERE id = ?1", params![fid], |row| row.get(0))
+                .map_err(|e| e.to_string())?;
+            if exists == 0 {
+                return Err("Folder not found".to_string());
+            }
+        }
+        conn.execute(
+            "UPDATE entries SET folder_id = ?1 WHERE id = ?2",
+            params![folder_id, entry_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+
     fn cleanup(&self, max_entries: i64) -> Result<(), String> {
         if max_entries <= 0 {
             return Ok(());
@@ -376,9 +549,9 @@ impl Database {
         conn.execute(
             "DELETE FROM entries WHERE id IN (
                 SELECT id FROM entries
-                WHERE is_pinned = 0
+                WHERE is_pinned = 0 AND folder_id IS NULL
                 ORDER BY timestamp ASC
-                LIMIT MAX(0, (SELECT COUNT(*) - ?1 FROM entries))
+                LIMIT MAX(0, (SELECT COUNT(*) FROM entries WHERE folder_id IS NULL) - ?1)
             )",
             params![max_entries],
         )
@@ -405,7 +578,7 @@ mod tests {
         assert!(!entry.is_pinned);
         assert!(!entry.is_private);
 
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, "hello world");
         assert_eq!(entries[0].content_type, "text");
@@ -428,7 +601,7 @@ mod tests {
         assert_eq!(w, 2);
         assert_eq!(h, 2);
 
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content_type, "image");
     }
@@ -437,9 +610,9 @@ mod tests {
     fn test_delete_entry() {
         let db = setup();
         let entry = db.add_entry("to delete", false).unwrap();
-        assert_eq!(db.get_entries(None, None, None).unwrap().len(), 1);
+        assert_eq!(db.get_entries(None, None, None, None).unwrap().len(), 1);
         db.delete_entry(entry.id).unwrap();
-        assert_eq!(db.get_entries(None, None, None).unwrap().len(), 0);
+        assert_eq!(db.get_entries(None, None, None, None).unwrap().len(), 0);
     }
 
     #[test]
@@ -447,10 +620,10 @@ mod tests {
         let db = setup();
         let entry = db.add_entry("pin me", false).unwrap();
         db.toggle_pin(entry.id).unwrap();
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert!(entries[0].is_pinned);
         db.toggle_pin(entry.id).unwrap();
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert!(!entries[0].is_pinned);
     }
 
@@ -488,7 +661,7 @@ mod tests {
         let start_utc = fmt(start);
         let deleted = db.delete_in_range(&start_utc, None).unwrap();
         assert_eq!(deleted, 1);
-        let remaining = db.get_entries(None, None, None).unwrap();
+        let remaining = db.get_entries(None, None, None, None).unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].content, "before today");
     }
@@ -529,7 +702,7 @@ mod tests {
             .delete_in_range(&fmt(yesterday_start), Some(&fmt(today_start)))
             .unwrap();
         assert_eq!(deleted, 1);
-        let remaining = db.get_entries(None, None, None).unwrap();
+        let remaining = db.get_entries(None, None, None, None).unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].content, "yesterday pinned");
     }
@@ -553,7 +726,7 @@ mod tests {
         drop(conn);
 
         db.cleanup(100).unwrap();
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert_eq!(entries.len(), 100);
         let oldest = entries.last().unwrap();
         assert_eq!(oldest.content, "entry 5");
@@ -580,7 +753,7 @@ mod tests {
         drop(conn);
 
         db.cleanup(100).unwrap();
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
 
         assert_eq!(entries.len(), 100);
         let pinned_count = entries.iter().filter(|e| e.is_pinned).count();
@@ -594,7 +767,7 @@ mod tests {
         for i in 0..150 {
             db.add_entry(&format!("entry {}", i), false).unwrap();
         }
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert_eq!(entries.len(), 150);
     }
 
@@ -605,7 +778,7 @@ mod tests {
         for i in 0..75 {
             db.add_entry(&format!("entry {}", i), false).unwrap();
         }
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert_eq!(entries.len(), 50);
     }
 
@@ -618,12 +791,12 @@ mod tests {
         db.add_entry("unpinned two", false).unwrap();
 
         db.clear_all(true).unwrap();
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert_eq!(entries.len(), 1);
         assert!(entries[0].is_pinned);
 
         db.clear_all(false).unwrap();
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert!(entries.is_empty());
     }
 
@@ -634,13 +807,13 @@ mod tests {
         db.add_entry("banana bread", false).unwrap();
         db.add_entry("apple tart", false).unwrap();
 
-        let results = db.get_entries(Some("apple"), None, None).unwrap();
+        let results = db.get_entries(Some("apple"), None, None, None).unwrap();
         assert_eq!(results.len(), 2);
 
-        let results = db.get_entries(Some("banana"), None, None).unwrap();
+        let results = db.get_entries(Some("banana"), None, None, None).unwrap();
         assert_eq!(results.len(), 1);
 
-        let results = db.get_entries(Some("orange"), None, None).unwrap();
+        let results = db.get_entries(Some("orange"), None, None, None).unwrap();
         assert_eq!(results.len(), 0);
     }
 
@@ -648,7 +821,7 @@ mod tests {
     fn test_date_filter_today() {
         let db = setup();
         db.add_entry("today entry", false).unwrap();
-        let entries = db.get_entries(None, Some("today"), None).unwrap();
+        let entries = db.get_entries(None, Some("today"), None, None).unwrap();
         assert_eq!(entries.len(), 1);
     }
 
@@ -680,7 +853,7 @@ mod tests {
         let db = setup();
         let entry = db.add_entry("original text", false).unwrap();
         db.update_entry(entry.id, "edited text").unwrap();
-        let entries = db.get_entries(None, None, None).unwrap();
+        let entries = db.get_entries(None, None, None, None).unwrap();
         assert_eq!(entries[0].content, "edited text");
         assert_eq!(entries[0].preview, "edited text");
     }
@@ -698,5 +871,200 @@ mod tests {
         let entry = db.add_image_entry(&[0u8; 16], 2, 2, false).unwrap();
         let result = db.update_entry(entry.id, "text");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_folder_create_and_rename() {
+        let db = setup();
+        let folder = db.create_folder("Work").unwrap();
+        assert_eq!(folder.name, "Work");
+        assert_eq!(folder.entry_count, 0);
+
+        db.rename_folder(folder.id, "Personal").unwrap();
+        let folders = db.get_folders().unwrap();
+        assert_eq!(folders.len(), 1);
+        assert_eq!(folders[0].name, "Personal");
+    }
+
+    #[test]
+    fn test_folder_name_validation() {
+        let db = setup();
+        assert!(db.create_folder("   ").is_err());
+        assert!(db.create_folder(&"x".repeat(65)).is_err());
+        // Duplicate names are allowed; folders are identified by id.
+        db.create_folder("Work").unwrap();
+        db.create_folder("Work").unwrap();
+        assert_eq!(db.get_folders().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_move_entry_to_folder() {
+        let db = setup();
+        let folder = db.create_folder("Work").unwrap();
+        let entry = db.add_entry("filed", false).unwrap();
+
+        db.move_entry_to_folder(entry.id, Some(folder.id)).unwrap();
+        let history = db.get_entries(None, None, None, None).unwrap();
+        assert!(history.is_empty(), "filed entries leave the main view");
+
+        let members = db.get_entries(None, None, None, Some(folder.id)).unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].id, entry.id);
+        assert_eq!(members[0].folder_id, Some(folder.id));
+
+        db.move_entry_to_folder(entry.id, None).unwrap();
+        let history = db.get_entries(None, None, None, None).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].folder_id, None);
+    }
+
+    #[test]
+    fn test_move_entry_to_missing_folder() {
+        let db = setup();
+        let entry = db.add_entry("entry", false).unwrap();
+        let result = db.move_entry_to_folder(entry.id, Some(999));
+        assert!(result.is_err());
+        // Entry unchanged on failure
+        let history = db.get_entries(None, None, None, None).unwrap();
+        assert_eq!(history.len(), 1);
+    }
+
+    #[test]
+    fn test_folder_members_protected_from_delete() {
+        let db = setup();
+        let folder = db.create_folder("Work").unwrap();
+        let filed = db.add_entry("safe", false).unwrap();
+        let plain = db.add_entry("deletable", false).unwrap();
+        db.move_entry_to_folder(filed.id, Some(folder.id)).unwrap();
+
+        assert!(db.delete_entry(filed.id).is_err());
+        let members = db.get_entries(None, None, None, Some(folder.id)).unwrap();
+        assert_eq!(members.len(), 1, "filed entry survives delete");
+
+        db.delete_entry(plain.id).unwrap();
+        let history = db.get_entries(None, None, None, None).unwrap();
+        assert!(history.is_empty(), "unfiled entry deletes normally");
+    }
+
+    #[test]
+    fn test_folder_members_survive_clear_all() {
+        let db = setup();
+        let folder = db.create_folder("Work").unwrap();
+        let filed = db.add_entry("filed", false).unwrap();
+        let pinned = db.add_entry("pinned one", false).unwrap();
+        db.toggle_pin(pinned.id).unwrap();
+        let plain = db.add_entry("plain", false).unwrap();
+        db.move_entry_to_folder(filed.id, Some(folder.id)).unwrap();
+        assert!(db.get_entries(None, None, None, None).unwrap().iter().any(|e| e.id == plain.id));
+
+        db.clear_all(true).unwrap();
+        let remaining = db.get_entries(None, None, None, None).unwrap();
+        assert_eq!(remaining.len(), 1, "plain cleared, pinned kept");
+        assert!(remaining[0].is_pinned);
+        assert_eq!(
+            db.get_entries(None, None, None, Some(folder.id)).unwrap().len(),
+            1,
+            "filed entry survives keep-pinned clear"
+        );
+
+        db.clear_all(false).unwrap();
+        assert_eq!(
+            db.get_entries(None, None, None, Some(folder.id)).unwrap().len(),
+            1,
+            "filed entry survives full clear"
+        );
+        assert!(db.get_entries(None, None, None, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_folder_members_survive_delete_in_range() {
+        let db = setup();
+        let folder = db.create_folder("Work").unwrap();
+        let filed = db.add_entry("filed", false).unwrap();
+        db.add_entry("plain", false).unwrap();
+        db.move_entry_to_folder(filed.id, Some(folder.id)).unwrap();
+
+        // Filed versus unfiled: only the unfiled one is deleted.
+        let deleted = db.delete_in_range("0000-01-01 00:00:00", None).unwrap();
+        assert_eq!(deleted, 1, "only the unfiled entry is deleted");
+        assert_eq!(
+            db.get_entries(None, None, None, Some(folder.id)).unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_fifo_cleanup_skips_folder_members() {
+        let db = Database::new_in_memory().unwrap();
+        let folder = db.create_folder("Work").unwrap();
+        let filed = db.add_entry("filed old", false).unwrap();
+
+        // 12 fresh unfiled entries (newer than the filed one)
+        for i in 0..12 {
+            db.add_entry(&format!("entry {}", i), false).unwrap();
+        }
+        db.move_entry_to_folder(filed.id, Some(folder.id)).unwrap();
+
+        db.set_max_entries(10);
+        db.cleanup(10).unwrap();
+
+        let history = db.get_entries(None, None, None, None).unwrap();
+        assert_eq!(history.len(), 10, "history capped at 10 unfiled entries");
+        assert_eq!(
+            db.get_entries(None, None, None, Some(folder.id)).unwrap().len(),
+            1,
+            "filed entry never evicted"
+        );
+    }
+
+    #[test]
+    fn test_delete_folder_unfiles_entries() {
+        let db = setup();
+        let folder = db.create_folder("Work").unwrap();
+        let entry = db.add_entry("entry", false).unwrap();
+        db.move_entry_to_folder(entry.id, Some(folder.id)).unwrap();
+
+        db.delete_folder(folder.id).unwrap();
+        let history = db.get_entries(None, None, None, None).unwrap();
+        assert_eq!(history.len(), 1, "entries return to history");
+        assert_eq!(history[0].folder_id, None);
+        assert!(db.get_folders().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_delete_folder_missing() {
+        let db = setup();
+        assert!(db.delete_folder(999).is_err());
+    }
+
+    #[test]
+    fn test_folder_counts() {
+        let db = setup();
+        let folder = db.create_folder("Work").unwrap();
+        let a = db.add_entry("a", false).unwrap();
+        let b = db.add_entry("b", false).unwrap();
+        db.move_entry_to_folder(a.id, Some(folder.id)).unwrap();
+        db.move_entry_to_folder(b.id, Some(folder.id)).unwrap();
+
+        let folders = db.get_folders().unwrap();
+        assert_eq!(folders[0].entry_count, 2);
+    }
+
+    #[test]
+    fn test_pinned_entry_in_folder() {
+        let db = setup();
+        let folder = db.create_folder("Work").unwrap();
+        let entry = db.add_entry("important", false).unwrap();
+        db.toggle_pin(entry.id).unwrap();
+        db.move_entry_to_folder(entry.id, Some(folder.id)).unwrap();
+
+        // Pinned members stay in the folder and appear in its Pinned group
+        let members = db.get_entries(None, None, None, Some(folder.id)).unwrap();
+        assert_eq!(members.len(), 1);
+        assert!(members[0].is_pinned);
+
+        // Pinned members are included in the folder count
+        let folders = db.get_folders().unwrap();
+        assert_eq!(folders[0].entry_count, 1);
     }
 }

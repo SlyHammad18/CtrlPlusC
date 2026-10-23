@@ -22,12 +22,15 @@
   async function loadEntries(query, filter) {
     try {
       const app = window.search.getAppFilter();
+      const folderId = window.folders ? window.folders.getCurrentId() : null;
       const entries = await window.api.getEntries(
         query || null,
         filter !== 'all' ? filter : null,
-        app || null
+        app || null,
+        folderId
       );
       window.ui.renderCards(entries, query || '');
+      window.folders?.updateCounts?.();
     } catch (err) {
       console.error('Failed to load entries:', err);
       window.ui.showError('Failed to load: ' + (err?.message || err));
@@ -70,6 +73,13 @@
     origSetAppFilter(app);
     window.ui.updateFilterBadge();
   };
+
+  // Reload whenever the selected folder changes
+  if (window.folders && window.folders.onChange) {
+    window.folders.onChange(() => {
+      loadEntries(window.search.getQuery(), window.search.getFilter());
+    });
+  }
 
   function startNameEdit(nameEl) {
     if (nameEl.querySelector('.clip-name-input')) return;
@@ -142,6 +152,21 @@
     if (e.target === e.currentTarget) window.ui.hideEdit();
   });
 
+  async function openAddEntry() {
+    // Keep the window visible (no hide-on-blur) while the add dialog is open,
+    // so the user can drag a file from another window into it.
+    try { await window.api.setIgnoreBlur(true); } catch (_) { /* best effort */ }
+    try {
+      await window.ui.showAddEntry();
+    } finally {
+      try { await window.api.setIgnoreBlur(false); } catch (err) {
+        console.error('Failed to restore blur behavior:', err);
+      }
+    }
+  }
+
+  document.getElementById('btn-add-entry')?.addEventListener('click', openAddEntry);
+
   const cardList = document.getElementById('card-list');
   cardList.addEventListener('click', async (e) => {
     const nameEl = e.target.closest('.clip-name');
@@ -163,6 +188,17 @@
 
     if (btn.classList.contains('copy-btn')) {
       copyById(id);
+    } else if (btn.classList.contains('folder-add-btn')) {
+      window.ui.showFolderPicker(id);
+    } else if (btn.classList.contains('unfolder-btn')) {
+      try {
+        await window.api.moveEntryToFolder(id, null);
+        window.ui.showToast('Moved to history');
+        loadEntries(window.search.getQuery(), window.search.getFilter());
+      } catch (err) {
+        console.error('Remove from folder failed:', err);
+        window.ui.showToast('Failed to remove from folder');
+      }
     } else if (btn.classList.contains('pin-btn')) {
       try {
         await window.api.togglePin(id);
@@ -176,6 +212,10 @@
       if (entry) window.ui.showEdit(id, entry.content);
       return;
     } else if (btn.classList.contains('delete-btn')) {
+      if (window.folders && window.folders.isFolderView()) {
+        window.ui.showToast('Remove the entry from the folder to delete it');
+        return;
+      }
       const confirmed = await window.ui.showConfirm('Delete this clipboard entry?');
       if (!confirmed) return;
       try {
@@ -184,6 +224,7 @@
         window.ui.showToast('Entry deleted');
       } catch (err) {
         console.error('Delete failed:', err);
+        window.ui.showToast(err?.message || 'Delete failed');
       }
     }
   });
@@ -290,9 +331,18 @@
           e.preventDefault();
           document.getElementById('btn-clear-all')?.click();
           return;
+        case 'n':
+          e.preventDefault();
+          openAddEntry();
+          return;
         case 'f':
           e.preventDefault();
           document.getElementById('btn-filter')?.click();
+          return;
+        case 'q':
+          // Win/Super+Q toggles the folder sidebar
+          e.preventDefault();
+          document.getElementById('btn-sidebar')?.click();
           return;
       }
     }
@@ -354,6 +404,10 @@
 
         if (e.key === 'Delete') {
           e.preventDefault();
+          if (window.folders && window.folders.isFolderView()) {
+            window.ui.showToast('Remove the entry from the folder to delete it');
+            return;
+          }
           const id = parseInt(card.dataset.id);
           const confirmed = await window.ui.showConfirm('Delete this clipboard entry?');
           if (!confirmed) return;
@@ -363,6 +417,7 @@
             window.ui.showToast('Entry deleted');
           } catch (err) {
             console.error('Delete failed:', err);
+            window.ui.showToast(err?.message || 'Delete failed');
           }
           return;
         }
@@ -1060,10 +1115,12 @@
   setInterval(async () => {
     try {
       const entry = await window.api.checkClipboard();
-      if (entry) {
-        if (isScrolling) pendingClipboardEntry = entry;
-        else window.ui.prependCard(entry);
-      }
+      if (!entry) return;
+      // New entries belong to unfiled history; don't inject them into a
+      // folder view where they don't appear until it's opened.
+      if (window.folders && window.folders.isFolderView()) return;
+      if (isScrolling) pendingClipboardEntry = entry;
+      else window.ui.prependCard(entry);
     } catch (err) {
       console.error('Clipboard check failed:', err);
     }

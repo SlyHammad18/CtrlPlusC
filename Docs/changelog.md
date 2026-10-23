@@ -4,6 +4,110 @@
 
 ---
 
+## [Fix] — Startup crash-hang + 100% CPU (main-thread sync commands) — 2026-10-24
+
+### ✅ What Changed
+**Follow-up (same day):** Add Entry now files into the currently selected folder, and sidebar counts are live.
+- `add_text_entry` / `add_image_entry` / `add_image_file_entry` gained `folder_id: Option<i64>`: they (a) set the real clipboard AND pre-seed the monitor dedupe state (`last_content`/`last_app_copy`, `last_image_hash`, `last_app_copy=__image__`) so the 500ms poller cannot record a second unfiled duplicate, (b) insert the DB entry immediately via `add_*_with_app`, (c) file it with `move_entry_to_folder` when a folder is open. Frontend passes `window.folders.getCurrentId()` and reloads right after add (the old 800ms poll delay is gone since insertion is synchronous with the command).
+- New `window.folders.updateCounts()` re-fetches folder counts and re-renders sidebar + folder-view header WITHOUT firing `onChange` (no pane-reload loop). Hooked into `loadEntries` success and into `ui.prependCard` / `ui.removeCard` so counts track new copies, deletes and moves (the poll path included).
+- `api.js`: `addTextEntry(content, folderId)`, `addImageToClipboard(rgba, w, h, folderId)`, `addImageFileEntry(path, folderId)`.
+- **Search hint styling fix (header overlap):** with the extra header buttons, the truncated placeholder ("Search his…") ran into the `Ctrl + /` chips and read like typed text. Fixed by (a) moving the chips to `right: 8px` — they and the clear button are mutually exclusive (chips only render while the input is empty; the clear button only while it has text), (b) compacting the caps (`padding: 2px 4px`, font 9.5px, gap 2px), (c) reserving `padding: 0 52px 0 34px` on the input for that zone, and (d) shortening the placeholder to "Search" so it never truncates into the chips.
+- **Win/Super+Q toggles the folder sidebar** (in-app keybinding, same handler as the other Ctrl+ shortcuts; implemented by clicking `#btn-sidebar` so sidebar visibility + active-state styling stay in sync). Folders now sort alphabetically — `get_folders` SQL uses `ORDER BY f.name COLLATE NOCASE` and the frontend keeps a `localeCompare(sensitivity: 'base')` fallback sort; "All History" stays first since the sidebar renders it before folder items.
+- **Search/filters span all folders, with origin labels:** `get_entries` now detects active filtering (search query / date filter / app filter) and drops the folder pane restriction, so results come from every folder plus unfiled history. Entries alias-flagged (`e`/`f` table aliases, date/order clauses updated) and a `LEFT JOIN folders` populates the new `Entry.folder_name` — only populated while filtering, so the All/folder panes keep their clean panes. `get_entry` selects `NULL` for the new column to keep `entry_from_row` shape. `ui.js` createCard renders a `.clip-folder-badge` (folder SVG + name, tooltip "In folder: X") for `folder_name` non-null results; styling appended in `cards.css`.
+
+### Original crash/100%-CPU diagnosis and command-level fixes (immediately below)
+
+**Diagnosis (verified by live debugging, not guessing):**
+- After the add-image crash, an instance was live at ~100% CPU with a stale socket listener (toggle reported "Ctrl+C is not running", so no window could ever open).
+- gdb sampling of the live process showed the GTK **main thread** inside `png::filter::paeth` + `fdeflate::decompress` — PNG decoding. Root cause chain:
+  1. **Tauri v2 executes sync `#[tauri::command]` bodies on the main (GTK) thread** — async fn or `#[tauri::command(async)]` moves them to a worker thread (docs + community reports). All our heavy commands (DB reads, arboard image gets, png decode/encode/base64) ran on the main thread; a panic in one of them takes the whole GTK loop down = "app crashed".
+  2. The OS clipboard held an `image/png` offer (confirmed via `wl-paste -l`); `check_clipboard` re-fetched and re-decoded it every 500ms — pegging a full core even after the earlier async fix moved it off the main thread (gdb then showed a tokio worker at ~100%).
+- Database state from the crashed session: `history.db` at 172MB with only 8 entries (free pages from evicted 4K image blobs; integrity_check ok). VACUUMed live: 172MB → 6MB.
+
+**Fixes:**
+- `lib.rs`: 24 heavy/IO commands now declared `#[tauri::command(async)]` (DB reads/writes, clipboard checks/copy, image add/preview, folder CRUD, get_entry_image) so they execute on worker threads and can no longer freeze the UI or take the GTK loop down on panic. Fast/config/FFI-sensitive commands (config, private-mode, hotkey, `begin_window_drag`, `get_focus_mode`, set_monitoring/set_ignore_blur) remain sync.
+- `lib.rs` `check_clipboard`: clipboard image *reads* throttled to once per 1.5s via new `ClipboardMonitor.last_image_read: Mutex<Option<Instant>>` (`clipboard.rs`); text detection stays at 500ms. Cuts constant PNG decode churn ~4x.
+- `database.rs` / `lib.rs` `run()`: DB init hardened — `busy_timeout(2s)` (don't block forever on a stale WAL/lock after a crash) and instead of `expect("Failed to initialize database")` panicking on a dead/corrupt DB file, fall back to a non-persistent in-memory history with a clear stderr recovery hint.
+- Verified working end-to-end: socket at `/run/user/1000/ctrl-c/ctrl-c.sock`, toggle show/hide works, CPU measured ~100% of a core → ~7% steady with an image permanently on the clipboard (the one startup Gtk-CRITICAL about `gtk_widget_get_scale_factor` comes from libayatana/tao internals and is benign).
+
+### ⏭️ What Was Not Changed
+- Clipboard-poll consumer design (still frontend 500ms setInterval); the next real fix for image-offer decode churn would be event-driven wl-clipboard-rs / tauri clipboard-manager `on_data_changed` — noted as future work.
+
+### ❌ Errors Faced
+- gdb batch `thread apply all bt` silently truncated on this 30-thread process; worked around with single-thread `bt` samples plus per-tid tick deltas from `/proc/<pid>/task/*/stat`.
+- `xclip`/`xsel` not installed for clipboard inspection; used `wl-paste -l` instead.
+
+### 📝 Notes
+- Verified: `cargo check` clean, `cargo test` 53/54 (environmental `test_wayland_not_set`), live CPU sampling before/after. User-facing recovery: if another instance hangs, `pkill -f target/debug/ctrl-c` then relaunch; window shows via `... toggle` / tray / Alt+V.
+
+---
+
+## [Feature] — Folders (sidebar, protected members) — 2026-10-23
+
+### ✅ What Changed
+**Database (`src-tauri/src/database.rs`):**
+- New `folders` table (`id`, `name`, `created_at` via `datetime('now')`) and `entries.folder_id INTEGER` column + `idx_folder` index.
+- New `Folder` struct (`id`, `name`, `entry_count`); `Entry` gains `folder_id: Option<i64>` (serialized to frontend).
+- Folder CRUD: `get_folders()` (LEFT JOIN entry counts), `create_folder()` (trim, empty/65+ char rejection, duplicate names allowed — ids identify folders), `rename_folder()`, `delete_folder()` (transactional: unfiles its entries first, so deleting a folder never deletes entries).
+- `move_entry_to_folder(entry_id, folder_id)` — verifies the folder exists when `Some`; `None` unfiles (entry returns to history)
+- **Protection (folder members are undeletable until removed from the folder):**
+  - `delete_entry` returns "Entry is in a folder — remove it from the folder first".
+  - `clear_all` (both branches) and `delete_in_range` (both branches) filter `folder_id IS NULL`.
+  - FIFO `cleanup` skips folder members; the cap count is now computed over unfiled entries only (using the old `COUNT(*) - max` over all rows would over-evict plain history once folder members exist).
+
+**Commands (`src-tauri/src/lib.rs`):** `get_folders`, `create_folder`, `rename_folder`, `delete_folder`, `move_entry_to_folder`; `get_entries` gains `folder_id: Option<i64>` (`None` = unfiled history, `Some(id)` = only that folder).
+
+**Frontend:**
+- `index.html`: new `.content-row` layout — collapsible 118px sidebar (`aside#folder-sidebar`: "All History" item, folder items with entry count + hover rename/delete buttons + double-click inline rename, create form) and a show-sidebar button when collapsed. New `styles/folders.css`, new `js/folders.js`.
+- `js/folders.js`: module owning `window.folders` state (`getCurrentId`, `isFolderView`, `select`, `refresh`, `onChange`); sidebar render, selection, inline rename (Enter saves / Escape cancels, mirrors the clip-name edit), delete with confirm dialog ("entries return to history"), create-on-Enter, sidebar toggle.
+- `js/ui.js`: `createCard` appends an **Add to folder** button on unfiled cards and a **Remove from folder** button instead of Delete on filed cards; new `showFolderPicker(cardId)` modal (loads folders via IPC, Escape/scrim close, move-on-click, empty state). Clear-all dialog hint notes folder entries are always kept.
+- `js/app.js`: `loadEntries` passes the current folder id; reload-on-folder-change via `folders.onChange`; click handlers for folder-add (picker) / unfolder (move back to history); Delete button and keyboard Delete blocked with an explanatory toast inside a folder view; delete failures surface the backend error message; 500ms clipboard poll skips card injection while a folder view is open. `api.js` exposes `getFolders`/`createFolder`/`renameFolder`/`deleteFolder`/`moveEntryToFolder` and `getEntries(..., folderId)`.
+
+**Pinned behavior:** pinned entries can be filed; they stay in the folder (protected like all members) and render in the folder's Pinned group. File entries are excluded from the All view entirely (they live in the folder), so they never appear in date groups.
+
+### ⏭️ What Was Not Changed
+- Search semantics (search operates within the active pane only), paste/focus pipeline, theme system, IPC shapes of existing commands.
+
+### ❌ Errors Faced
+- `cargo test` initially failed with "failed to read plugin permissions ... app_hide.toml" from stale Tauri build-script dirs; deleting the stale `target/debug/build/tauri-*` entries fixed it (recurring once for a second stale dir during `cargo check`).
+- Nested `<main id="content-row"><main id="card-list">` markup mistake — converted the wrapper to a `<div>` to avoid invalid nesting and duplicate `</main>`.
+- Scratch typo `btn.type = button('')` in the folder picker draft — fixed to `btn.type = 'button'` before validation.
+
+### 📝 Notes
+- Verified: `cargo check` clean, `cargo test` 53/54 pass (`hotkey::test_wayland_not_set` still fails whenever `WAYLAND_DISPLAY` is set — pre-existing environmental assertion), `node --check` passes on all `src/js/*.js`.
+- Future work (not done here): folder search across all folders, an "All" view including filed entries, per-folder keyboard shortcuts.
+
+---
+
+## [Feature] — Add Entry (type / paste / drop) — 2026-10-23
+
+### ✅ What Changed
+- **Backend (`src-tauri/src/lib.rs`):** two new commands registered alongside the copy commands:
+  - `add_text_entry(content)` — trims, rejects empty, sets the system clipboard via arboard deliberately *without* updating the monitor's dedupe state (`copy_to_clipboard` pre-sets `last_content` so the poller skips recording; the add-entry flow needs the opposite so the poller records it as history within 500ms).
+  - `add_image_entry(rgba, width, height)` — validates 0 < dims ≤ 3840x2160 and `rgba.len == w*h*4`, then `arboard::set_image`; same poller-records-it principle.
+- **Frontend:**
+  - `index.html`: new `+` (`#btn-add-entry`) icon button in the header actions (before the Folders/Filters buttons).
+  - `js/ui.js` `showAddEntry()`: modal (reuses `folder-picker-visible` fade + `edit-footer`/`settings-action-btn` styling) with a textarea ("Type or paste text…"), image drop zone (drag-over highlight; first `image/*` file decoded via `createImageBitmap` + canvas → RGBA, auto-scaled down to the 3840x2160 cap if bigger), Ctrl+V paste of an image from the OS clipboard into the textarea, image preview thumbnail with remove button, Cancel / Add buttons. On add: invoke the backend command, toast, and a delayed (800ms) `loadEntries` so the poller-recorded entry shows up.
+  - `api.js`: `addTextEntry(content)`, `addImageToClipboard(rgba, width, height)`.
+  - `styles/folders.css`: add-entry modal styles (panel, dashed drop zone, drag-over state, thumb, remove button).
+  - `app.js`: button opens the modal; new `Ctrl+N` shortcut does the same.
+- Behavior note: added content goes to the actual system clipboard first; the 500ms poller then records it, so history, system clipboard, and card order stay consistent. Dedupe untouched — adding text identical to the current clipboard content records nothing new.
+
+### ⏭️ What Was Not Changed
+- `copy_to_clipboard` / `copy_image_and_paste` semantics (still suppress history recording — that's the copy-a-card flow), clipboard monitor, folder feature.
+
+### ❌ Errors Faced
+- **Drops not picked up from other apps (real root cause, after misleading fix attempt):** wry intercepts OS file drops at the GTK layer on Linux (webkit / tauri-apps#11282, webkit bug 265857) and re-emits them as native `tauri://drag-drop` events — the webview NEVER receives external drops as DOM DragEvents, so all JS `dataTransfer` handling (files or uri-list) fundamentally cannot work. Fix: for the open Add-Entry dialog, listen to `tauri://drag-enter`/`drag-over`/`drag-leave` (drop-zone highlight) and `tauri://drag-drop` (payload `{paths, position}` → `decodeAndSetPath(paths[0])`); DOM `dragover`/`drop` handlers now only `preventDefault()` (suppressing the webview's "open dropped file" fallback), plus object-URL decode path retained for in-webview File objects. wry 0.55.1 (this Cargo.lock) already includes the Wayland "Drop never fired" fix (wry#1408, Nov 2024). `preview_image_file`/`add_image_file_entry` backend commands retained for the path flow.
+- `image::DynamicImage::dimensions()` is trait-only (E0599) — used inherent `width()/height()` instead.
+- **Window drag not working in the modal:** webview-side `startDragging()`/`data-tauri-drag-region` is unreliable for this transparent undecorated window. New backend command `begin_window_drag` runs on the GTK main thread (`window.run_on_main_thread`) and calls raw FFI `gdk_display_get_default_seat` → `gdk_seat_get_pointer` → `gdk_device_get_position` → `gtk_window_begin_move_drag(gwin, 1, rx, ry, 0)` — the same invocation a native GTK titlebar press performs. Header mousedown now calls it via IPC.
+
+### 📝 Notes
+- Verified `cargo check` + `cargo test` + `node --check`. Manual: Ctrl+N → type text → Add appears in history; drop a PNG → "Add image" → image entry appears at front; pasting an image with Ctrl+V works from the textarea.
+- **Follow-up (slow add-image / crashes):** root causes in the first implementation were (a) the file was fully decoded TWICE (once in `preview_image_file`, once in `add_image_file_entry`), (b) the 3840x2160 downscale used the very expensive Lanczos3 filter, and (c) `decode()` ran with image-crate default limits — a large (or maliciously/partially decoded) file could allocate multi-GB and OOM-kill the process ("sometimes crashes"). Fixes: single decode — `preview_image_file` now decodes once with `Limits` capped at 256MB allocation (`decode_image_capped`, graceful "too large" error instead of crash), downscales with the fast Triangle filter (`cap_to_poller_size`), and stores the final ≤33MB RGBA in a global `PREVIEWED_IMAGE` cache keyed by path; `add_image_file_entry` consumes the cache when the path matches (no second decode) and only decodes fresh after preview-expiry/mismatch. Small images (≤160px) skip the resize entirely.
+- **Follow-up (drag-friendly add mode):** while the Add Entry dialog is open, `set_ignore_blur(true)` keeps the window visible when clicking/drifting to another window (restored in `finally` when the dialog closes), the dialog header is a `data-tauri-drag-region` so the whole window can be repositioned mid-add, the backdrop no longer dismisses the dialog on click (Escape / Cancel still close), and file drops are accepted anywhere on the overlay, not just the dashed zone.
+
+**Follow-up UI fix (same day):** sidebar now hidden by default (`content-row` starts with `sidebar-hidden`), and the odd floating edge button was replaced by a proper folder icon button (`#btn-sidebar`) in the header actions (next to filter/lock) that toggles the sidebar — active (accent) state while open; the chevron button inside the sidebar header still hides it. Removed `sidebar-show-btn` markup/CSS and unused `sidebar`/`BACK_SVG` declarations in `folders.js`. Second pass: folder-item hover softened from accent-subtle (too loud) to `--bg-card`, accent tint reserved for the selected item, and the rename/delete icons now overlay the item's right edge with a gradient fade (no layout shift; entry count fades out while hovered). Third pass: rename/delete moved out of the sidebar onto a new folder-view header bar in the main window (`#folder-view-header` above the card list — full untruncated folder name, entry count, rename (inline input) and delete buttons; shown only while a folder is selected), the sidebar items are select-only (no pencil/trash overlays, no double-click rename), and the sidebar chevron was dropped (`#btn-sidebar` in the app header is the only toggle now). Bug fix: `folders.js` never fetched folders on startup — only rendered after the first create; `refresh()` is now invoked at module load, so persisted folders appear on app open.
+
 ## [Stability/Perf] — Crash & Performance Audit Fixes — 2026-10-22
 
 ### ✅ What Changed

@@ -115,6 +115,12 @@ window.ui = (() => {
   const TRASH_SVG =
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
 
+  const FOLDER_PLUS_SVG =
+    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>';
+
+  const FOLDER_MINUS_SVG =
+    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4l2 3h9a2 2 0 0 1 2 2z"/><line x1="9" y1="14" x2="15" y2="14"/></svg>';
+
   let collapsedSections = new Set();
   let collapsePersistRef = null;
 
@@ -320,6 +326,19 @@ window.ui = (() => {
       card.appendChild(appLabel);
     }
 
+    // Search/filter results span all folders; show where the entry lives.
+    if (entry.folder_name) {
+      const folderBadge = document.createElement('div');
+      folderBadge.className = 'clip-folder-badge';
+      folderBadge.title = 'In folder: ' + entry.folder_name;
+      folderBadge.innerHTML =
+        '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+      const folderText = document.createElement('span');
+      folderText.textContent = entry.folder_name;
+      folderBadge.appendChild(folderText);
+      card.appendChild(folderBadge);
+    }
+
     const footer = document.createElement('div');
     footer.className = 'clip-footer';
 
@@ -351,15 +370,29 @@ window.ui = (() => {
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'clip-action-btn delete-btn';
     deleteBtn.title = 'Delete';
-    deleteBtn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+    deleteBtn.innerHTML = TRASH_SVG;
 
     if (entry.content_type !== 'image') {
       actions.appendChild(editBtn);
     }
     actions.appendChild(copyBtn);
     actions.appendChild(pinBtn);
-    actions.appendChild(deleteBtn);
+
+    if (entry.folder_id == null) {
+      const folderBtn = document.createElement('button');
+      folderBtn.className = 'clip-action-btn folder-add-btn';
+      folderBtn.title = 'Add to folder';
+      folderBtn.innerHTML = FOLDER_PLUS_SVG;
+      actions.appendChild(folderBtn);
+      actions.appendChild(deleteBtn);
+    } else {
+      const unfolderBtn = document.createElement('button');
+      unfolderBtn.className = 'clip-action-btn unfolder-btn';
+      unfolderBtn.title = 'Remove from folder';
+      unfolderBtn.innerHTML = FOLDER_MINUS_SVG;
+      actions.appendChild(unfolderBtn);
+    }
+
     footer.appendChild(timestamp);
     footer.appendChild(actions);
     card.appendChild(footer);
@@ -500,6 +533,8 @@ window.ui = (() => {
     }
 
     updateCount();
+    // New clipboard content changes folder counts too (e.g. the poll path).
+    window.folders?.updateCounts?.();
 
     requestAnimationFrame(() => {
       card.classList.remove('entering');
@@ -518,6 +553,7 @@ window.ui = (() => {
         group.remove();
       }
       updateCount();
+      window.folders?.updateCounts?.();
       if (!cardList.querySelector('.clip-card') && !cardList.querySelector('.group')) {
         emptyState.style.display = 'flex';
       }
@@ -650,7 +686,9 @@ window.ui = (() => {
 
       const hint = document.createElement('p');
       hint.className = 'confirm-hint';
-      hint.textContent = 'Pinned entries are saved from deletion if you choose.';
+      hint.textContent =
+        'Pinned entries are saved from deletion if you choose. ' +
+        'Entries in folders are always kept.';
 
       const actions = document.createElement('div');
       actions.className = 'confirm-actions confirm-actions-col';
@@ -691,6 +729,405 @@ window.ui = (() => {
       allBtn.addEventListener('click', () => close('all'));
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) close(null);
+      });
+    });
+  }
+
+  function showAddEntry() {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'add-entry-overlay';
+
+      const panel = document.createElement('div');
+      panel.className = 'add-entry-panel';
+
+      const header = document.createElement('div');
+      header.className = 'add-entry-header';
+      header.textContent = 'Add to clipboard';
+      header.classList.add('draggable-header');
+
+      const dropZone = document.createElement('div');
+      dropZone.className = 'add-entry-body';
+
+      const preview = document.createElement('div');
+      preview.className = 'add-entry-preview';
+      preview.style.display = 'none';
+
+      const textarea = document.createElement('textarea');
+      textarea.className = 'add-entry-text';
+      textarea.placeholder = 'Type or paste text…';
+      textarea.rows = 5;
+      textarea.spellcheck = false;
+
+      const hint = document.createElement('p');
+      hint.className = 'add-entry-hint';
+      hint.textContent = 'Drop an image here, or paste one with Ctrl+V';
+
+      const footer = document.createElement('div');
+      footer.className = 'edit-footer';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'settings-action-btn';
+      cancelBtn.textContent = 'Cancel';
+
+      const addBtn = document.createElement('button');
+      addBtn.className = 'settings-action-btn theme-save-btn';
+      addBtn.textContent = 'Add';
+
+      footer.appendChild(cancelBtn);
+      footer.appendChild(addBtn);
+
+      dropZone.appendChild(preview);
+      dropZone.appendChild(textarea);
+      dropZone.appendChild(hint);
+      panel.appendChild(header);
+      panel.appendChild(dropZone);
+      panel.appendChild(footer);
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+
+      let image = null;
+
+      function onKey(ev) {
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          cleanup();
+          resolve(null);
+        }
+      }
+
+      function setImage(pending, src, caption) {
+        image = pending;
+        preview.style.display = 'flex';
+        preview.innerHTML = '';
+        const thumb = document.createElement('img');
+        thumb.className = 'add-entry-thumb';
+        thumb.src = src;
+        thumb.alt = 'Image to add';
+        preview.appendChild(thumb);
+
+        if (caption) {
+          const chip = document.createElement('span');
+          chip.className = 'add-entry-chip';
+          chip.textContent = caption;
+          preview.appendChild(chip);
+        }
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'add-entry-remove';
+        remove.title = 'Remove image';
+        remove.innerHTML =
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        remove.addEventListener('click', () => {
+          image = null;
+          preview.style.display = 'none';
+          preview.innerHTML = '';
+          addBtn.textContent = 'Add';
+        });
+        preview.appendChild(remove);
+        addBtn.textContent = 'Add image';
+      }
+
+      // In-webview decode: used when drop delivers actual File objects.
+      async function decodeAndSet(file) {
+        addBtn.disabled = true;
+        try {
+          const blobUrl = URL.createObjectURL(file);
+          const bitmap = await createImageBitmap(file);
+          let w = bitmap.width;
+          let h = bitmap.height;
+          const maxW = 3840;
+          const maxH = 2160;
+          const scale = Math.min(1, maxW / w, maxH / h);
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(w * scale);
+          canvas.height = Math.round(h * scale);
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+          bitmap.close();
+          const pixelData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          setImage(
+            { rgba: new Uint8Array(pixelData.buffer), width: canvas.width, height: canvas.height },
+            blobUrl,
+            'Image ' + canvas.width + 'x' + canvas.height
+          );
+        } catch (err) {
+          console.error('Image decode failed:', err);
+          window.ui.showToast('Could not read that image');
+        } finally {
+          addBtn.disabled = false;
+        }
+      }
+
+      // WebKitGTK delivers drops from other apps as file:// URIs
+      // (text/uri-list), not as File objects — the backend decodes those.
+      async function decodeAndSetPath(path) {
+        addBtn.disabled = true;
+        try {
+          const info = await window.api.previewImageFile(path);
+          setImage(
+            { path },
+            info.thumb_data_uri,
+            info.name + ' · Image ' + info.width + 'x' + info.height
+          );
+        } catch (err) {
+          console.error('Image read failed:', err);
+          window.ui.showToast('Could not read that image');
+        } finally {
+          addBtn.disabled = false;
+        }
+      }
+
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+      });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+      dropZone.addEventListener('drop', handleDrop);
+
+      // Whole overlay accepts drops too — the dashed zone is a visual target,
+      // but a file dragged from another window can land anywhere.
+      overlay.addEventListener('dragover', (e) => e.preventDefault());
+      overlay.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        handleDrop(e);
+      });
+
+      function handleDrop(e) {
+        const file = e.dataTransfer?.files?.[0];
+        if (file && file.type.startsWith('image/')) {
+          decodeAndSet(file);
+          return;
+        }
+        if (file && file.type === 'text/plain') {
+          file.text().then((t) => { textarea.value = (textarea.value + t).trim(); });
+          return;
+        }
+        // WebKitGTK: drops from other apps carry file:// URIs instead of File objects
+        const uriData = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '';
+        const uri = uriData.split(/\r?\n/).map((s) => s.trim()).find((u) => u.startsWith('file://'));
+        if (uri) {
+          let path;
+          try {
+            path = decodeURIComponent(new URL(uri).pathname);
+          } catch (_) {
+            path = null;
+          }
+          if (path) decodeAndSetPath(path);
+          return;
+        }
+        // Image dragged from another browser window arrives as a data URI
+        const dataUri = uriData.split(/\r?\n/).map((s) => s.trim()).find((u) => u.startsWith('data:image/'));
+        if (dataUri && dataUri.length < 3 * 1024 * 1024) {
+          try {
+            const bin = atob(dataUri.split(',')[1]);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const file2 = new File([bytes], 'dropped-image', { type: 'image/png' });
+            decodeAndSet(file2);
+          } catch (_) { /* malformed data URI */ }
+        }
+      }
+
+      // Moving the window from inside the modal: drive real GTK
+      // gtk_window_begin_move_drag via the backend (webview-side
+      // startDragging / drag-region is unreliable on this webview).
+      header.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        window.api.beginWindowDrag().catch((err) => console.error('Drag failed:', err));
+      });
+
+      // Native drag-drop events. wry intercepts OS file drops at the GTK
+      // layer and emits tauri://drag-* events; the webview never receives
+      // them as DOM DragEvents on WebKitGTK (webkit bug 265857), so DOM
+      // drop handlers alone cannot work here.
+      const eventApi = window.__TAURI__?.event;
+      const unlisteners = [];
+      if (eventApi?.listen) {
+        const dragOverClass = 'drag-over';
+        Promise.all([
+          eventApi.listen('tauri://drag-enter', () => dropZone.classList.add(dragOverClass)),
+          eventApi.listen('tauri://drag-over', () => dropZone.classList.add(dragOverClass)),
+          eventApi.listen('tauri://drag-leave', () => dropZone.classList.remove(dragOverClass)),
+          eventApi.listen('tauri://drag-drop', (e) => {
+            dropZone.classList.remove(dragOverClass);
+            const paths = (e.payload || {}).paths || [];
+            if (paths.length > 0) decodeAndSetPath(paths[0]);
+          }),
+        ]).then((uns) => unlisteners.push(...uns)).catch((err) => {
+          console.error('Failed to register drag events:', err);
+        });
+      }
+
+      // Suppress the webview's default "open the dropped file" behavior
+      const suppress = (e) => e.preventDefault();
+      document.addEventListener('dragover', suppress);
+      document.addEventListener('drop', suppress);
+
+      function cleanup() {
+        document.removeEventListener('keydown', onKey, true);
+        document.removeEventListener('dragover', suppress);
+        document.removeEventListener('drop', suppress);
+        unlisteners.forEach((u) => { try { u(); } catch (_) {} });
+        overlay.classList.remove('folder-picker-visible');
+        setTimeout(() => overlay.remove(), 160);
+      }
+
+      textarea.addEventListener('paste', (e) => {
+        const item = Array.from(e.clipboardData?.items || []).find((it) => it.type.startsWith('image/'));
+        if (item) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) decodeAndSet(file);
+        }
+      });
+
+      async function submit() {
+        const folderId = window.folders ? window.folders.getCurrentId() : null;
+        if (image && image.path) {
+          try {
+            const entry = await window.api.addImageFileEntry(image.path, folderId);
+            cleanup();
+            resolve('image');
+            window.ui.showToast('Image copied to clipboard');
+            loadEntriesRef('');
+          } catch (err) {
+            console.error('Add image failed:', err);
+            window.ui.showToast(String(err?.message || err).replace(/^Error['"]?\s*:?\s*/i, '').trim() || 'Failed to add image');
+          }
+          return;
+        }
+        if (image) {
+          try {
+            await window.api.addImageToClipboard(image.rgba, image.width, image.height, folderId);
+            cleanup();
+            resolve('image');
+            window.ui.showToast('Image copied to clipboard');
+            loadEntriesRef('');
+          } catch (err) {
+            console.error('Add image failed:', err);
+            window.ui.showToast(String(err?.message || err).replace(/^Error['"]?\s*:?\s*/i, '').trim() || 'Failed to add image');
+          }
+          return;
+        }
+        const text = textarea.value.trim();
+        if (!text) {
+          window.ui.showToast('Type text or drop an image first');
+          return;
+        }
+        try {
+          await window.api.addTextEntry(text, folderId);
+          cleanup();
+          resolve('text');
+          window.ui.showToast('Added to clipboard');
+          loadEntriesRef('');
+        } catch (err) {
+          console.error('Add entry failed:', err);
+          window.ui.showToast(String(err?.message || err).replace(/^Error['"]?\s*:?\s*/i, '').trim() || 'Failed to add entry');
+        }
+      }
+
+      addBtn.addEventListener('click', submit);
+      cancelBtn.addEventListener('click', () => {
+        cleanup();
+        resolve(null);
+      });
+      // Deliberately NOT closing on backdrop click: while adding, the user
+      // drags a file from another window, so stray outside clicks must not
+      // dismiss the dialog. Cancel button / Escape close it.
+      header.addEventListener('dblclick', (e) => e.stopPropagation());
+
+      document.addEventListener('keydown', onKey, true);
+      requestAnimationFrame(() => overlay.classList.add('folder-picker-visible'));
+      setTimeout(() => textarea.focus(), 80);
+    });
+  }
+
+  function showFolderPicker(cardId) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'folder-picker-overlay';
+
+      const panel = document.createElement('div');
+      panel.className = 'folder-picker';
+
+      const header = document.createElement('div');
+      header.className = 'folder-picker-header';
+      header.textContent = 'Add to folder';
+
+      const listEl = document.createElement('div');
+      listEl.className = 'folder-picker-list';
+
+      function close(result) {
+        overlay.classList.remove('folder-picker-visible');
+        setTimeout(() => overlay.remove(), 200);
+        resolve(result);
+      }
+
+      function closeOnKey(ev) {
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          document.removeEventListener('keydown', closeOnKey, true);
+          close(null);
+        }
+      }
+
+      window.api.getFolders().then((folders) => {
+        if (!folders || folders.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'folder-picker-empty';
+          empty.textContent = 'No folders yet — create one in the sidebar';
+          listEl.appendChild(empty);
+        } else {
+          folders.forEach((folder) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'folder-picker-btn';
+            btn.title = 'Add to ' + folder.name;
+            btn.textContent = folder.name;
+            btn.addEventListener('click', async () => {
+              document.removeEventListener('keydown', closeOnKey, true);
+              try {
+                await window.api.moveEntryToFolder(cardId, folder.id);
+                close(folder.id);
+                loadEntriesRef('');
+                window.ui.showToast('Added to "' + folder.name + '"');
+              } catch (err) {
+                console.error('Move to folder failed:', err);
+                close(null);
+                window.ui.showToast('Failed to add to folder');
+              }
+            });
+            listEl.appendChild(btn);
+          });
+        }
+      }).catch((err) => {
+        console.error('Failed to load folders:', err);
+        const empty = document.createElement('div');
+        empty.className = 'folder-picker-empty';
+        empty.textContent = 'Failed to load folders';
+        listEl.appendChild(empty);
+      });
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          document.removeEventListener('keydown', closeOnKey, true);
+          close(null);
+        }
+      });
+
+      panel.appendChild(header);
+      panel.appendChild(listEl);
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+      document.addEventListener('keydown', closeOnKey, true);
+      requestAnimationFrame(() => {
+        overlay.classList.add('folder-picker-visible');
       });
     });
   }
@@ -879,5 +1316,5 @@ window.ui = (() => {
     closeFilterPanel();
   }
 
-  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showClearAllDialog, showError, setLoadEntries, setCollapsedSections, setCollapsePersist, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit, showFilterPanel, hideFilterPanel, updateFilterBadge, renderFilterList, showLoading, flashCopied, updateCount };
+  return { renderCards, prependCard, removeCard, updatePinState, showToast, showConfirm, showClearAllDialog, showFolderPicker, showAddEntry, showError, setLoadEntries, setCollapsedSections, setCollapsePersist, showLockScreen, hideLockScreen, showPasswordSetup, lockShake, setLockError, showSettings, hideSettings, showEdit, hideEdit, showFilterPanel, hideFilterPanel, updateFilterBadge, renderFilterList, showLoading, flashCopied, updateCount };
 })();

@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles/main.css" />
+  <link rel="stylesheet" href="styles/folders.css" />
   <link rel="stylesheet" href="styles/cards.css" />
   <link rel="stylesheet" href="styles/animations.css" />
   <link rel="stylesheet" href="styles/lock.css" />
@@ -26,7 +27,7 @@
 
     <header class="header">
       <div class="search-wrap">
-        <input type="text" id="search-input" class="search-input" placeholder="Search history" spellcheck="false" />
+        <input type="text" id="search-input" class="search-input" placeholder="Search" spellcheck="false" />
         <span id="search-kbd" class="search-kbd"><kbd class="kbd-cap">Ctrl</kbd><span class="kbd-plus">+</span><kbd class="kbd-cap">/</kbd></span>
         <button id="btn-search-clear" class="search-clear" title="Clear search" aria-label="Clear search" style="display:none">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -36,6 +37,12 @@
         <button id="btn-stop" class="icon-btn record-btn" title="Stop recording">
           <span id="record-dot" class="record-dot"></span>
           <span id="record-label" class="record-label">REC</span>
+        </button>
+        <button id="btn-add-entry" class="icon-btn" title="Add entry (type, paste, or drop an image)" aria-label="Add entry">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button id="btn-sidebar" class="icon-btn" title="Folders" aria-label="Toggle folders">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4l2 3h9a2 2 0 0 1 2 2z"/></svg>
         </button>
         <button id="btn-filter" class="icon-btn filter-toggle" title="Filter by app">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -76,7 +83,36 @@
       <div id="filter-app-list" class="filter-app-list"></div>
     </div>
 
-    <main id="card-list" class="card-list">
+    <div id="content-row" class="content-row sidebar-hidden">
+      <aside id="folder-sidebar" class="folder-sidebar">
+        <div class="folder-sidebar-header">
+          <span class="folder-sidebar-title">Folders</span>
+        </div>
+        <div id="folder-list" class="folder-list"></div>
+        <form id="folder-create-form" class="folder-create-form" autocomplete="off">
+          <input type="text" id="folder-create-input" class="folder-create-input" placeholder="New folder" maxlength="64" spellcheck="false" />
+          <button type="submit" id="btn-folder-create" class="folder-create-btn" title="Create folder" aria-label="Create folder">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </form>
+      </aside>
+      <div id="main-pane" class="main-pane">
+        <div id="folder-view-header" class="folder-view-header" style="display:none">
+          <span class="folder-view-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <span id="folder-view-name" class="folder-view-name"></span>
+          <span id="folder-view-count" class="folder-view-count"></span>
+          <span class="folder-view-actions">
+            <button id="btn-folder-rename" class="folder-view-btn icon-btn" title="Rename folder" aria-label="Rename folder">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </button>
+            <button id="btn-folder-delete" class="folder-view-btn icon-btn" title="Delete folder (entries return to history)" aria-label="Delete folder">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </span>
+        </div>
+        <main id="card-list" class="card-list">
       <div id="empty-state" class="empty-state">
         <div class="empty-art">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -93,6 +129,8 @@
         <button id="btn-refresh" class="filter-btn" style="margin-top:12px">Refresh</button>
       </div>
     </main>
+      </div>
+    </div>
 
     <footer class="footer">
       <span id="footer-count" class="footer-count"></span>
@@ -194,7 +232,7 @@
 
           <div class="settings-section about-section">
             <div class="settings-about">
-              <span class="settings-label-text">Ctrl+C v0.1.0</span>
+              <span class="settings-label-text">Ctrl+C v0.3.0</span>
               <span class="settings-label-desc">Cross-platform clipboard manager</span>
             </div>
           </div>
@@ -243,6 +281,7 @@
 
   <script type="module" src="js/theme.js"></script>
   <script type="module" src="js/api.js"></script>
+  <script type="module" src="js/folders.js"></script>
   <script type="module" src="js/search.js"></script>
   <script type="module" src="js/ui.js"></script>
   <script type="module" src="js/app.js"></script>

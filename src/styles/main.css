@@ -141,7 +141,8 @@ body {
 .search-input {
   width: 100%;
   height: 34px;
-  padding: 0 56px 0 34px;
+  /* Reserve room for the Ctrl+/ hint chips (idle) / clear button (typing) */
+  padding: 0 52px 0 34px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
@@ -180,18 +181,20 @@ body {
 
 .search-kbd {
   position: absolute;
-  right: 34px;
+  /* Chips only show while the input is empty (clear button shows when it
+     has text), so they take the clear button's usual spot at the edge. */
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   pointer-events: none;
 }
 
 .kbd-cap {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 500;
   line-height: 1;
   color: var(--text-secondary);
@@ -199,7 +202,7 @@ body {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: 4px;
-  padding: 3px 5px;
+  padding: 2px 4px;
 }
 
 .kbd-plus {

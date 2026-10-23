@@ -735,3 +735,27 @@
   margin-top: -4px;
 }
 
+
+/* Folder origin badge: shown on search/filter result cards that live in a
+   folder (those results span all folders). */
+.clip-folder-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  max-width: 100%;
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  padding: 2px 7px 2px 5px;
+  margin: 4px 0 -2px 2px;
+  overflow: hidden;
+}
+
+.clip-folder-badge span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
