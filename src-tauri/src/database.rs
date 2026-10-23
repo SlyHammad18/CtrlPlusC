@@ -21,6 +21,31 @@ pub struct Database {
     max_entries: AtomicI64,
 }
 
+/// Truncate to at most `max_chars` characters, appending "..." when cut.
+/// Slicing by bytes (`&s[..100]`) panics on multi-byte UTF-8 content.
+fn truncate_preview(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    format!("{}...", s.chars().take(max_chars).collect::<String>())
+}
+
+/// Map a DB row (id, content, content_type, preview, timestamp, is_pinned,
+/// is_private, source_app, name) to an Entry.
+fn entry_from_row(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
+    Ok(Entry {
+        id: row.get(0)?,
+        content: row.get(1)?,
+        content_type: row.get(2)?,
+        preview: row.get(3)?,
+        timestamp: row.get(4)?,
+        is_pinned: row.get::<_, i32>(5)? != 0,
+        is_private: row.get::<_, i32>(6)? != 0,
+        source_app: row.get(7)?,
+        name: row.get(8)?,
+    })
+}
+
 impl Database {
     pub fn new(path: &str) -> Result<Self, String> {
         let conn = Connection::open(path).map_err(|e| e.to_string())?;
@@ -111,7 +136,7 @@ impl Database {
                 "Image".to_string()
             }
         } else if content.len() > 100 {
-            format!("{}...", &content[..100])
+            truncate_preview(content, 100)
         } else {
             content.to_string()
         };
@@ -203,19 +228,7 @@ impl Database {
 
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map(params_refs.as_slice(), |row| {
-                Ok(Entry {
-                    id: row.get(0)?,
-                    content: row.get(1)?,
-                    content_type: row.get(2)?,
-                    preview: row.get(3)?,
-                    timestamp: row.get(4)?,
-                    is_pinned: row.get::<_, i32>(5)? != 0,
-                    is_private: row.get::<_, i32>(6)? != 0,
-                    source_app: row.get(7)?,
-                    name: row.get(8)?,
-                })
-            })
+            .query_map(params_refs.as_slice(), entry_from_row)
             .map_err(|e| e.to_string())?;
 
         let mut entries = Vec::new();
@@ -223,6 +236,20 @@ impl Database {
             entries.push(row.map_err(|e| e.to_string())?);
         }
         Ok(entries)
+    }
+
+    /// Fetch a single entry by id. Avoids transferring the entire history
+    /// (with full contents) just to read one entry.
+    pub fn get_entry(&self, id: i64) -> Result<Option<Entry>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT id, content, content_type, preview, timestamp, is_pinned, is_private, source_app, name FROM entries WHERE id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
+        match rows.next().map_err(|e| e.to_string())? {
+            Some(row) => Ok(Some(entry_from_row(row).map_err(|e| e.to_string())?)),
+            None => Ok(None),
+        }
     }
 
     pub fn set_entry_name(&self, id: i64, name: &str) -> Result<(), String> {
@@ -289,11 +316,7 @@ impl Database {
 
     pub fn update_entry(&self, id: i64, content: &str) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let preview = if content.len() > 100 {
-            format!("{}...", &content[..100])
-        } else {
-            content.to_string()
-        };
+        let preview = truncate_preview(content, 100);
         let affected = conn
             .execute(
                 "UPDATE entries SET content = ?1, preview = ?2 WHERE id = ?3 AND content_type = 'text'",
@@ -435,24 +458,34 @@ mod tests {
     fn test_delete_in_range_today() {
         let db = Database::new_in_memory().unwrap();
         let conn = db.conn.lock().unwrap();
+        let fmt = |d: chrono::NaiveDateTime| {
+            d.and_local_timezone(chrono::Local)
+                .unwrap()
+                .with_timezone(&chrono::Utc)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        };
+        // Insert at local noon converted to UTC so the entry stays within the
+        // local day regardless of timezone offset (UTC-relative inserts can
+        // land on a different local date).
+        let today = chrono::Local::now().date_naive().and_hms_opt(12, 0, 0).unwrap();
+        let before = (chrono::Local::now().date_naive() - chrono::Duration::days(2))
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
         conn.execute(
-            "INSERT INTO entries (content, content_type, preview, timestamp) VALUES ('in today', 'text', 'in today', datetime('now', '-1 hour'))",
-            [],
+            "INSERT INTO entries (content, content_type, preview, timestamp) VALUES ('in today', 'text', 'in today', ?1)",
+            params![fmt(today)],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO entries (content, content_type, preview, timestamp) VALUES ('before today', 'text', 'before today', datetime('now', '-2 days'))",
-            [],
+            "INSERT INTO entries (content, content_type, preview, timestamp) VALUES ('before today', 'text', 'before today', ?1)",
+            params![fmt(before)],
         )
         .unwrap();
         drop(conn);
 
         let start = chrono::Local::now().date_naive().and_hms_opt(0, 0, 0).unwrap();
-        let start_utc = start
-            .and_local_timezone(chrono::Local)
-            .unwrap()
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string();
+        let start_utc = fmt(start);
         let deleted = db.delete_in_range(&start_utc, None).unwrap();
         assert_eq!(deleted, 1);
         let remaining = db.get_entries(None, None, None).unwrap();
@@ -464,14 +497,27 @@ mod tests {
     fn test_delete_in_range_yesterday_excludes_pinned() {
         let db = Database::new_in_memory().unwrap();
         let conn = db.conn.lock().unwrap();
+        let fmt = |d: chrono::NaiveDateTime| {
+            d.and_local_timezone(chrono::Local)
+                .unwrap()
+                .with_timezone(&chrono::Utc)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        };
+        let yesterday_noon = (chrono::Local::now().date_naive() - chrono::Duration::days(1))
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let yesterday_morning = (chrono::Local::now().date_naive() - chrono::Duration::days(1))
+            .and_hms_opt(9, 0, 0)
+            .unwrap();
         conn.execute(
-            "INSERT INTO entries (content, content_type, preview, timestamp) VALUES ('yesterday normal', 'text', 'yesterday normal', datetime('now', '-1 day', '-2 hours'))",
-            [],
+            "INSERT INTO entries (content, content_type, preview, timestamp) VALUES ('yesterday normal', 'text', 'yesterday normal', ?1)",
+            params![fmt(yesterday_noon)],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO entries (content, content_type, preview, timestamp, is_pinned) VALUES ('yesterday pinned', 'text', 'yesterday pinned', datetime('now', '-1 day', '-3 hours'), 1)",
-            [],
+            "INSERT INTO entries (content, content_type, preview, timestamp, is_pinned) VALUES ('yesterday pinned', 'text', 'yesterday pinned', ?1, 1)",
+            params![fmt(yesterday_morning)],
         )
         .unwrap();
         drop(conn);
@@ -479,8 +525,6 @@ mod tests {
         let local_now = chrono::Local::now();
         let today_start = local_now.date_naive().and_hms_opt(0, 0, 0).unwrap();
         let yesterday_start = (local_now.date_naive() - chrono::Duration::days(1)).and_hms_opt(0, 0, 0).unwrap();
-        let fmt =
-            |d: chrono::NaiveDateTime| d.and_local_timezone(chrono::Local).unwrap().format("%Y-%m-%d %H:%M:%S").to_string();
         let deleted = db
             .delete_in_range(&fmt(yesterday_start), Some(&fmt(today_start)))
             .unwrap();

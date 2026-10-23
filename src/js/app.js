@@ -36,8 +36,7 @@
 
   async function copyById(id) {
     try {
-      const entries = await window.api.getEntries(null, null);
-      const entry = entries.find((e) => e.id === id);
+      const entry = await window.api.getEntry(id);
       if (!entry) return;
       // Prevent the blur handler from hiding the window before hide_and_paste does.
       await window.api.setIgnoreBlur(true);
@@ -173,7 +172,7 @@
         console.error('Toggle pin failed:', err);
       }
     } else if (btn.classList.contains('edit-btn')) {
-      const entry = await window.api.getEntries(null, null).then(entries => entries.find(e => e.id === id));
+      const entry = await window.api.getEntry(id);
       if (entry) window.ui.showEdit(id, entry.content);
       return;
     } else if (btn.classList.contains('delete-btn')) {
@@ -384,8 +383,7 @@
         if (e.key === 'e' || e.key === 'E') {
           e.preventDefault();
           const id = parseInt(card.dataset.id);
-          const entries = await window.api.getEntries(null, null);
-          const entry = entries.find(ent => ent.id === id);
+          const entry = await window.api.getEntry(id);
           if (entry && entry.content_type === 'text') {
             window.ui.showEdit(id, entry.content);
           }
@@ -656,8 +654,10 @@
   });
 
   document.getElementById('btn-settings-close')?.addEventListener('click', () => {
-    if (listeningHotkey) {
+    if (listeningHotkey && hotkeyHandler) {
       listeningHotkey = false;
+      document.removeEventListener('keydown', hotkeyHandler);
+      hotkeyHandler = null;
       document.getElementById('setting-hotkey').classList.remove('listening');
     }
     window.ui.hideSettings();
@@ -665,6 +665,11 @@
 
   document.getElementById('settings-overlay')?.addEventListener('click', (e) => {
     if (e.target === document.getElementById('settings-overlay')) {
+      if (listeningHotkey && hotkeyHandler) {
+        listeningHotkey = false;
+        document.removeEventListener('keydown', hotkeyHandler);
+        hotkeyHandler = null;
+      }
       window.ui.hideSettings();
     }
   });
@@ -1025,7 +1030,8 @@
     const mode = await window.api.getFocusMode();
     if (mode === 'no-focus') {
       const hint = document.getElementById('focus-mode-hint');
-      const text = hint.querySelector('.focus-mode-hint-text');
+      const text = hint && hint.querySelector('.focus-mode-hint-text');
+      if (!hint || !text) return;
       text.textContent =
         'No GNOME Shell extension: the picker is mouse-only here. ' +
         'Install "Window Calls" (extensions.gnome.org/extension/4724) and ' +
