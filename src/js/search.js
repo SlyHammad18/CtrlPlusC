@@ -76,11 +76,20 @@ window.search = (() => {
     if (onSearchCallback) onSearchCallback(currentQuery, currentFilter);
   }
 
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   function highlight(text, query) {
-    if (!query) return text;
-    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${escaped})`, 'gi');
-    return text.replace(regex, '<span class="highlight">$1</span>');
+    if (!query) return escapeHtml(text);
+    // Escape the text first: clipboard content is rendered via innerHTML, and
+    // unescaped content would execute HTML/JS inside the webview.
+    const escaped = escapeHtml(text);
+    const queryEscaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${queryEscaped})`, 'gi');
+    return escaped.replace(regex, '<span class="highlight">$1</span>');
   }
 
   return { init, getQuery, getFilter, getAppFilter, setAppFilter, highlight, clear: () => clearFn && clearFn() };

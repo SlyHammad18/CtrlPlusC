@@ -4,6 +4,38 @@
 
 ---
 
+## [Stability/Perf] — Crash & Performance Audit Fixes — 2026-10-22
+
+### ✅ What Changed
+**Crash fixes (Rust):**
+- `src-tauri/src/database.rs`: replaced byte-slice truncation `&content[..100]` with `truncate_preview()` (char-boundary-safe). The old code panicked on any clipboard content whose 100th byte fell inside a multi-byte UTF-8 char (emoji/CJK) — both in `add_entry_ext` and `update_entry`.
+- `src-tauri/src/lib.rs` `group_range_utc()`: removed `.and_local_timezone(Local).unwrap()` — panics on DST-ambiguous/nonexistent local midnights (some zones, twice a year). Now picks earliest → latest → UTC fallback.
+- `src-tauri/src/lib.rs`: removed `app.default_window_icon().unwrap()` panic in setup (tray builds without icon if missing); removed `get_db_path()`'s `.expect()` on directory creation.
+**Correctness fix (data deletion window):**
+- `group_range_utc()` formatted local wall-clock strings while the DB stores UTC — `delete_group` operated on the wrong time window in any non-UTC timezone (e.g. PKT: "Older" delete could mis-target groups). Boundaries are now converted local instants → UTC. Mirrored the fix in `test_delete_in_range_*` (tests previously used UTC-relative inserts that alias across timezone offsets; now insert at local noon converted to UTC — previously failing under non-UTC TZ).
+**Security (webview script execution from clipboard content):**
+- `src/js/search.js` `highlight()`: clipboard text was rendered via `innerHTML` unescaped — any copied HTML/JS executed inside the webview (which has full IPC access). Text is now HTML-escaped before match highlighting; with no query, output is escaped too.
+- `src/js/ui.js`: added `escapeHtml()`; used for the search query in the empty state and rewrote `showError()` to set raw error text via `textContent` (errors can echo clipboard content).
+**Performance:**
+- `src-tauri/src/lib.rs` `check_clipboard()` (runs every 500ms): no longer copies the full image buffer (`to_vec()`, up to ~33MB at 4K) each poll just to hash it — hashes the borrowed bytes and copies only when actually inserting. Same borrow fix applied to the one-shot snapshot blocks in `run()`, `unlock_private_mode()`, and `clear_all()`.
+- **New `get_entry` command**: `Database::get_entry(id)` + `window.api.getEntry(id)`. `copyById`, the edit button, and the `E` keyboard shortcut previously fetched the *entire* history with full contents over IPC and filtered client-side (megabytes per click with default unlimited history). Row-to-Entry mapping shared via `entry_from_row`.
+- `src/js/ui.js`: `showError` retry button no longer double-fires the load.
+**Bug fix (UI):**
+- `src/js/app.js`: the hotkey-capture keydown listener was never removed when closing settings via backdrop-click/Escape — it stayed attached and `preventDefault`ed every keydown afterwards (broken keyboard). Now removed on all close paths and on capture completion.
+- `src/js/app.js`: null-guarded the focus-mode hint (`.focus-mode-hint-text`) before use.
+
+### ⏭️ What Was Not Changed
+- Paste/focus pipeline (GTK hide, window-calls, uinput/ydotool), CSS, IPC argument shapes for existing commands.
+- The `hotkey::test_wayland_not_set` test legitimately fails in any shell with `WAYLAND_DISPLAY` set — environmental assertion about env vars, left as-is.
+
+### ❌ Errors Faced
+- After the timezone fix, `test_delete_in_range_yesterday_excludes_pinned` still failed under PKT — root cause was the test's insertion semantics (UTC-relative `datetime('now')` math crossing local-date boundaries), fixed by using guaranteed local-day instants.
+
+### 📝 Notes
+- Verified: `cargo check` clean, 42/42 unit tests pass, `node --check` on all JS files.
+
+---
+
 ## [Linux] — App Name Resolution (X11 + Wayland) — 2026-08-23
 
 ### ✅ What Changed

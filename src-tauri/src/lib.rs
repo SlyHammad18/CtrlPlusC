@@ -324,7 +324,9 @@ pub struct PrivateModeStatus {
 fn get_db_path() -> PathBuf {
     let mut path = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("ctrl-c");
-    fs::create_dir_all(&path).expect("Failed to create data directory");
+    if let Err(e) = fs::create_dir_all(&path) {
+        eprintln!("Ctrl+C: Failed to create data directory {}: {}", path.display(), e);
+    }
     path.push("history.db");
     path
 }
@@ -345,6 +347,11 @@ fn get_entries(
 }
 
 #[tauri::command]
+fn get_entry(state: State<'_, Arc<Database>>, id: i64) -> Result<Option<Entry>, String> {
+    state.get_entry(id)
+}
+
+#[tauri::command]
 fn get_app_names(state: State<'_, Arc<Database>>) -> Result<Vec<String>, String> {
     state.get_app_names()
 }
@@ -354,15 +361,24 @@ fn get_app_names(state: State<'_, Arc<Database>>) -> Result<Vec<String>, String>
 /// timestamps are stored UTC ('YYYY-MM-DD HH:MM:SS') and compared against
 /// *local* midnight boundaries.
 fn group_range_utc(label: &str) -> Result<(String, Option<String>), String> {
-    use chrono::{Datelike, Duration, Local};
+    use chrono::{Datelike, Duration, Local, TimeZone, Utc};
 
     let now = Local::now();
     let today_midnight = now.date_naive().and_hms_opt(0, 0, 0).unwrap();
+    // Local midnight can be ambiguous or nonexistent on DST transition days;
+    // and_local_timezone().unwrap() would panic there. Pick a sensible instant
+    // (earliest, then latest, then treat-as-UTC as a last resort).
+    //
+    // Timestamps are stored as UTC strings, so the boundary instants must be
+    // converted to UTC wall time before comparison -- formatting local time
+    // directly would widen/misplace the deletion range in any non-UTC tz.
     let fmt = |d: chrono::NaiveDateTime| -> String {
-        d.and_local_timezone(Local)
-            .unwrap()
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string()
+        let chosen = d
+            .and_local_timezone(Local)
+            .earliest()
+            .or_else(|| d.and_local_timezone(Local).latest())
+            .unwrap_or_else(|| Local.from_utc_datetime(&d));
+        chosen.with_timezone(&Utc).format("%Y-%m-%d %H:%M:%S").to_string()
     };
 
     let week_start = today_midnight
@@ -425,11 +441,10 @@ fn clear_all(state: State<'_, Arc<Database>>, monitor: State<'_, ClipboardMonito
             let w = img.width as u32;
             let h = img.height as u32;
             if w > 0 && h > 0 && w <= 3840 && h <= 2160 {
-                let raw = img.bytes.to_vec();
                 let expected = (w as usize) * (h as usize) * 4;
-                if raw.len() == expected {
+                if img.bytes.len() == expected {
                     if let Ok(mut last) = monitor.last_image_hash.lock() {
-                        *last = Some(hash_bytes(&raw));
+                        *last = Some(hash_bytes(&img.bytes));
                     }
                 }
             }
@@ -555,11 +570,10 @@ fn unlock_private_mode(
             let w = img.width as u32;
             let h = img.height as u32;
             if w > 0 && h > 0 && w <= 3840 && h <= 2160 {
-                let raw = img.bytes.to_vec();
                 let expected = (w as usize) * (h as usize) * 4;
-                if raw.len() == expected {
+                if img.bytes.len() == expected {
                     if let Ok(mut last) = monitor.last_image_hash.lock() {
-                        *last = Some(hash_bytes(&raw));
+                        *last = Some(hash_bytes(&img.bytes));
                     }
                 }
             }
@@ -995,15 +1009,16 @@ fn check_clipboard(
             return Ok(None);
         }
 
-        let raw_bytes = img.bytes.to_vec();
-
         // Validate buffer size before hashing/storing
         let expected_len = (w as usize) * (h as usize) * 4;
-        if raw_bytes.len() != expected_len {
-            return Err(format!("Clipboard image has unexpected buffer size: {} (expected {} for {}x{})", raw_bytes.len(), expected_len, w, h));
+        if img.bytes.len() != expected_len {
+            return Err(format!("Clipboard image has unexpected buffer size: {} (expected {} for {}x{})", img.bytes.len(), expected_len, w, h));
         }
 
-        let hash = hash_bytes(&raw_bytes);
+        // Hash the borrowed buffer -- no copy. This runs every poll cycle
+        // (500ms) while an image sits on the clipboard, so copying the whole
+        // RGBA buffer (up to ~33MB at 4K) to hash would churn memory badly.
+        let hash = hash_bytes(&img.bytes);
 
         {
             let mut last = monitor.last_image_hash.lock().map_err(|e| e.to_string())?;
@@ -1021,7 +1036,7 @@ fn check_clipboard(
         }
 
         let app = get_foreground_app();
-        match db.add_image_entry_with_app(&raw_bytes, w, h, false, &app) {
+        match db.add_image_entry_with_app(&img.bytes, w, h, false, &app) {
             Ok(entry) => return Ok(Some(entry)),
             Err(ref e) if e == "duplicate entry" => return Ok(None),
             Err(e) => return Err(e),
@@ -1055,11 +1070,10 @@ pub fn run() {
             let w = img.width as u32;
             let h = img.height as u32;
             if w > 0 && h > 0 && w <= 3840 && h <= 2160 {
-                let raw = img.bytes.to_vec();
                 let expected = (w as usize) * (h as usize) * 4;
-                if raw.len() == expected {
+                if img.bytes.len() == expected {
                     if let Ok(mut last) = monitor.last_image_hash.lock() {
-                        *last = Some(hash_bytes(&raw));
+                        *last = Some(hash_bytes(&img.bytes));
                     }
                 }
             }
@@ -1134,8 +1148,7 @@ pub fn run() {
                 .item(&quit)
                 .build()?;
 
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+            let tray_builder = TrayIconBuilder::new()
                 .tooltip("Ctrl+C -- Clipboard Manager")
                 .menu(&menu)
                 .on_tray_icon_event(|tray, event| {
@@ -1188,8 +1201,13 @@ pub fn run() {
                         }
                         _ => {}
                     }
-                })
-                .build(app)?;
+                });
+            let tray_builder = if let Some(icon) = app.default_window_icon() {
+                tray_builder.icon(icon.clone())
+            } else {
+                tray_builder
+            };
+            let _ = tray_builder.build(app)?;
 
             let hotkey_str = {
                 let cfg = app.state::<Mutex<Config>>();
@@ -1233,6 +1251,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             add_entry,
             get_entries,
+            get_entry,
             delete_entry,
             delete_group,
             clear_all,

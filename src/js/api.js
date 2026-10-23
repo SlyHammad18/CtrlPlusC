@@ -26,6 +26,9 @@ window.api = (() => {
     getEntries: (query = null, dateFilter = null, sourceApp = null) =>
       invoke('get_entries', { query, dateFilter, sourceApp }),
 
+    getEntry: (id) =>
+      invoke('get_entry', { id }),
+
     getAppNames: () =>
       invoke('get_app_names'),
 

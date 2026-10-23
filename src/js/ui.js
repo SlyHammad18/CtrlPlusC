@@ -89,6 +89,12 @@ window.ui = (() => {
   const cardList = document.getElementById('card-list');
   const emptyState = document.getElementById('empty-state');
 
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = String(text ?? '');
+    return div.innerHTML;
+  }
+
   const CHEVRON_SVG =
     '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>';
 
@@ -375,7 +381,7 @@ window.ui = (() => {
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
           </div>
-          <p class="empty-text">No results for "${query}"</p>
+          <p class="empty-text">No results for "${escapeHtml(query)}"</p>
           <p class="empty-hint">Try a different search term</p>
         `;
       } else {
@@ -694,14 +700,17 @@ window.ui = (() => {
     if (!el) return;
     el.style.display = 'flex';
     if (!el.parentNode) cardList.appendChild(el);
+    // Error strings can contain clipboard content (failed loads echo the raw
+    // error); never interpolate them into innerHTML unescaped.
     el.innerHTML = `
-      <p class="empty-text" style="color:var(--danger)">${message}</p>
+      <p class="empty-text" style="color:var(--danger)"></p>
       <button id="btn-retry" class="filter-btn" style="margin-top:8px">Retry</button>
     `;
+    const textEl = el.querySelector('.empty-text');
+    if (textEl) textEl.textContent = message;
     const retry = document.getElementById('btn-retry');
     if (retry) {
       retry.addEventListener('click', () => {
-        loadEntriesRef('');
         loadEntriesRef('');
       });
     }
