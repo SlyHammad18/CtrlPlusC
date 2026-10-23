@@ -23,8 +23,23 @@ window.api = (() => {
     addEntry: (content, isPrivate = false) =>
       invoke('add_entry', { content, isPrivate }),
 
-    getEntries: (query = null, dateFilter = null, sourceApp = null) =>
-      invoke('get_entries', { query, dateFilter, sourceApp }),
+    getEntries: (query = null, dateFilter = null, sourceApp = null, folderId = null) =>
+      invoke('get_entries', { query, dateFilter, sourceApp, folderId }),
+
+    getFolders: () =>
+      invoke('get_folders'),
+
+    createFolder: (name) =>
+      invoke('create_folder', { name }),
+
+    renameFolder: (id, name) =>
+      invoke('rename_folder', { id, name }),
+
+    deleteFolder: (id) =>
+      invoke('delete_folder', { id }),
+
+    moveEntryToFolder: (id, folderId) =>
+      invoke('move_entry_to_folder', { id, folderId }),
 
     getEntry: (id) =>
       invoke('get_entry', { id }),
@@ -68,6 +83,18 @@ window.api = (() => {
     copyToClipboard: (text) =>
       invoke('copy_to_clipboard', { text }),
 
+    addTextEntry: (content, folderId = null) =>
+      invoke('add_text_entry', { content, folderId }),
+
+    addImageToClipboard: (rgba, width, height, folderId = null) =>
+      invoke('add_image_entry', { rgba, width, height, folderId }),
+
+    previewImageFile: (path) =>
+      invoke('preview_image_file', { path }),
+
+    addImageFileEntry: (path, folderId = null) =>
+      invoke('add_image_file_entry', { path, folderId }),
+
     checkClipboard: () =>
       invoke('check_clipboard'),
 
@@ -100,6 +127,9 @@ window.api = (() => {
 
     setIgnoreBlur: (ignore) =>
       invoke('set_ignore_blur', { ignore }),
+
+    beginWindowDrag: () =>
+      invoke('begin_window_drag'),
 
     getFocusMode: () =>
       invoke('get_focus_mode'),

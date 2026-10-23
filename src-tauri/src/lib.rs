@@ -10,7 +10,7 @@ mod wayland_focus;
 
 use clipboard::{hash_bytes, ClipboardMonitor};
 use config::Config;
-use database::{Database, Entry};
+use database::{Database, Entry, Folder};
 use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -331,27 +331,57 @@ fn get_db_path() -> PathBuf {
     path
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn add_entry(state: State<'_, Arc<Database>>, content: String, is_private: bool) -> Result<Entry, String> {
     state.add_entry(&content, is_private)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_entries(
     state: State<'_, Arc<Database>>,
     query: Option<String>,
     date_filter: Option<String>,
     source_app: Option<String>,
+    folder_id: Option<i64>,
 ) -> Result<Vec<Entry>, String> {
-    state.get_entries(query.as_deref(), date_filter.as_deref(), source_app.as_deref())
+    state.get_entries(query.as_deref(), date_filter.as_deref(), source_app.as_deref(), folder_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
+fn get_folders(state: State<'_, Arc<Database>>) -> Result<Vec<Folder>, String> {
+    state.get_folders()
+}
+
+#[tauri::command(async)]
+fn create_folder(state: State<'_, Arc<Database>>, name: String) -> Result<Folder, String> {
+    state.create_folder(&name)
+}
+
+#[tauri::command(async)]
+fn rename_folder(state: State<'_, Arc<Database>>, id: i64, name: String) -> Result<(), String> {
+    state.rename_folder(id, &name)
+}
+
+#[tauri::command(async)]
+fn delete_folder(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> {
+    state.delete_folder(id)
+}
+
+#[tauri::command(async)]
+fn move_entry_to_folder(
+    state: State<'_, Arc<Database>>,
+    id: i64,
+    folder_id: Option<i64>,
+) -> Result<(), String> {
+    state.move_entry_to_folder(id, folder_id)
+}
+
+#[tauri::command(async)]
 fn get_entry(state: State<'_, Arc<Database>>, id: i64) -> Result<Option<Entry>, String> {
     state.get_entry(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_app_names(state: State<'_, Arc<Database>>) -> Result<Vec<String>, String> {
     state.get_app_names()
 }
@@ -394,7 +424,7 @@ fn group_range_utc(label: &str) -> Result<(String, Option<String>), String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_group(state: State<'_, Arc<Database>>, label: String) -> Result<u32, String> {
     let (start, end) = group_range_utc(&label)?;
     state.delete_in_range(&start, end.as_deref())
@@ -421,12 +451,12 @@ fn get_focus_mode() -> String {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_entry(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> {
     state.delete_entry(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn clear_all(state: State<'_, Arc<Database>>, monitor: State<'_, ClipboardMonitor>, keep_pinned: bool) -> Result<(), String> {
     state.clear_all(keep_pinned)?;
     if let Ok(mut clip) = arboard::Clipboard::new() {
@@ -453,17 +483,17 @@ fn clear_all(state: State<'_, Arc<Database>>, monitor: State<'_, ClipboardMonito
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn toggle_pin(state: State<'_, Arc<Database>>, id: i64) -> Result<(), String> {
     state.toggle_pin(id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn update_entry(state: State<'_, Arc<Database>>, id: i64, content: String) -> Result<(), String> {
     state.update_entry(id, &content)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_entry_name(state: State<'_, Arc<Database>>, id: i64, name: String) -> Result<(), String> {
     state.set_entry_name(id, &name)
 }
@@ -677,7 +707,7 @@ fn get_foreground_app() -> String {
     String::new()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn copy_and_paste(
     text: String,
     monitor: State<'_, ClipboardMonitor>,
@@ -851,7 +881,7 @@ fn base64_data_uri(bytes: &[u8]) -> String {
     format!("data:image/png;base64,{}", b64)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_entry_image(db: State<'_, Arc<Database>>, id: i64) -> Result<Option<String>, String> {
     let data = db.get_entry_image_data(id)?;
     match data {
@@ -863,7 +893,7 @@ fn get_entry_image(db: State<'_, Arc<Database>>, id: i64) -> Result<Option<Strin
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn copy_image_and_paste(
     db: State<'_, Arc<Database>>,
     monitor: State<'_, ClipboardMonitor>,
@@ -918,7 +948,7 @@ fn register_hotkey(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn copy_to_clipboard(text: String, monitor: State<'_, ClipboardMonitor>) -> Result<(), String> {
     if let Ok(mut last) = monitor.last_content.lock() {
         *last = Some(text.clone());
@@ -929,6 +959,275 @@ fn copy_to_clipboard(text: String, monitor: State<'_, ClipboardMonitor>) -> Resu
     let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     clip.set_text(&text).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Manual "Add entry": put text on the system clipboard and record it into
+/// history, filed into `folder_id` when provided. The monitor dedupe state is
+/// pre-seeded (like copy_to_clipboard) so the 500ms poller does not record a
+/// second, unfiled duplicate of what we insert here.
+#[tauri::command(async)]
+fn add_text_entry(
+    state: State<'_, Arc<Database>>,
+    monitor: State<'_, ClipboardMonitor>,
+    content: String,
+    folder_id: Option<i64>,
+) -> Result<Entry, String> {
+    let text = content.trim();
+    if text.is_empty() {
+        return Err("Nothing to add".to_string());
+    }
+    {
+        let mut last = monitor.last_content.lock().map_err(|e| e.to_string())?;
+        *last = Some(text.to_string());
+    }
+    {
+        let mut app = monitor.last_app_copy.lock().map_err(|e| e.to_string())?;
+        *app = Some(text.to_string());
+    }
+    let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clip.set_text(text).map_err(|e| e.to_string())?;
+    let entry = state.add_entry_with_app(text, false, "")?;
+    if let Some(fid) = folder_id {
+        state.move_entry_to_folder(entry.id, Some(fid))?;
+    }
+    Ok(entry)
+}
+
+/// Manual "Add entry" for images dropped/pasted in the UI: set the clipboard
+/// (dedupe pre-seeded, see add_text_entry) and record the DB entry, optionally
+/// filed into a folder.
+#[tauri::command(async)]
+fn add_image_entry(
+    state: State<'_, Arc<Database>>,
+    monitor: State<'_, ClipboardMonitor>,
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+    folder_id: Option<i64>,
+) -> Result<Entry, String> {
+    let expected_len = (width as usize) * (height as usize) * 4;
+    if width == 0 || height == 0 {
+        return Err("Image is empty".to_string());
+    }
+    if width > 3840 || height > 2160 {
+        return Err("Image too large (max 3840x2160)".to_string());
+    }
+    if rgba.len() != expected_len {
+        return Err(format!(
+            "Invalid image data: {}x{} buffer {} (expected {})",
+            width, height, rgba.len(), expected_len
+        ));
+    }
+    let hash = hash_bytes(&rgba);
+    {
+        let mut last = monitor.last_image_hash.lock().map_err(|e| e.to_string())?;
+        *last = Some(hash);
+    }
+    {
+        let mut app = monitor.last_app_copy.lock().map_err(|e| e.to_string())?;
+        *app = Some("__image__".to_string());
+    }
+    let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clip.set_image(arboard::ImageData {
+        width: width as usize,
+        height: height as usize,
+        bytes: std::borrow::Cow::Borrowed(&rgba),
+    })
+    .map_err(|e| e.to_string())?;
+    let entry = state.add_image_entry_with_app(&rgba, width, height, false, "")?;
+    if let Some(fid) = folder_id {
+        state.move_entry_to_folder(entry.id, Some(fid))?;
+    }
+    Ok(entry)
+}
+
+/// Decode an image file dropped on the Add Entry dialog. On Linux, WebKitGTK
+/// delivers external drops as file:// URIs (`text/uri-list`), not
+/// `dataTransfer.files`, and the webview cannot read local files, so the
+/// backend decodes them.
+///
+/// Preview step: decodes ONCE (allocation-limited so a decode-bomb instead
+/// returns an error instead of OOM-killing the app), downscales to the
+/// clipboard-poller cap with the fast Triangle filter, caches the final
+/// pixels, and returns metadata + a small PNG data URI for the thumbnail.
+/// Does NOT touch the clipboard.
+
+/// Cached result of the last previewed image, so "Add" does not re-decode
+/// the same file. Consumed by add_image_file_entry.
+struct CachedPreview {
+    path: String,
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
+static PREVIEWED_IMAGE: OnceLock<Mutex<Option<CachedPreview>>> = OnceLock::new();
+
+fn preview_cache() -> &'static Mutex<Option<CachedPreview>> {
+    PREVIEWED_IMAGE.get_or_init(|| Mutex::new(None))
+}
+
+/// Decode with strict allocation limits (Limits::default() is 512MB, which
+/// still allows multi-GB transient peaks on giant files -> OOM crash).
+fn decode_image_capped(path: &str) -> Result<image::DynamicImage, String> {
+    let mut reader = image::ImageReader::open(path)
+        .and_then(|r| r.with_guessed_format().map_err(|e| std::io::Error::other(e.to_string())))
+        .map_err(|e| format!("Cannot open image: {}", e))?;
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
+    reader
+        .decode()
+        .map_err(|e| format!("Cannot read image (may be too large): {}", e))
+}
+
+/// Downscale to the clipboard monitor's observed cap, Triangle filter (the
+/// Lanczos3 downscale of a large image is the dominant latency).
+fn cap_to_poller_size(img: image::DynamicImage) -> image::RgbaImage {
+    if img.width() > 3840 || img.height() > 2160 {
+        img.resize(3840, 2160, image::imageops::FilterType::Triangle).to_rgba8()
+    } else {
+        img.to_rgba8()
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ImageFilePreview {
+    name: String,
+    width: u32,
+    height: u32,
+    thumb_data_uri: String,
+}
+
+#[tauri::command(async)]
+fn preview_image_file(path: String) -> Result<ImageFilePreview, String> {
+    let img = cap_to_poller_size(decode_image_capped(&path)?);
+    let (w, h) = (img.width(), img.height());
+
+    // Small thumbnail (max 160px on the long side) for the dialog preview.
+    let scale = u32::max(1, u32::max(w, h) / 160);
+    let dyn_thumb = if scale == 1 {
+        // Tiny image: clone is negligible at <=160px
+        image::DynamicImage::ImageRgba8(img.clone())
+    } else {
+        image::DynamicImage::ImageRgba8(image::imageops::resize(
+            &img,
+            w / scale,
+            h / scale,
+            image::imageops::FilterType::Triangle,
+        ))
+    };
+    let mut png = Vec::new();
+    dyn_thumb
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    let thumb_data_uri = base64_data_uri(&png);
+
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "image".to_string());
+
+    // Cache the prepared pixels; "Add" consumes them without re-decoding.
+    *preview_cache().lock().map_err(|e| e.to_string())? = Some(CachedPreview {
+        path,
+        width: w,
+        height: h,
+        rgba: img.into_raw(),
+    });
+
+    Ok(ImageFilePreview { name, width: w, height: h, thumb_data_uri })
+}
+
+/// The confirmed add: reuse the previewed pixels when they match the path,
+/// otherwise decode fresh, then set the system clipboard (dedupe pre-seeded
+/// so no poller duplicate) and record the entry, optionally filed into a folder.
+#[tauri::command(async)]
+fn add_image_file_entry(
+    state: State<'_, Arc<Database>>,
+    monitor: State<'_, ClipboardMonitor>,
+    path: String,
+    folder_id: Option<i64>,
+) -> Result<Entry, String> {
+    let (w, h, bytes) = {
+        let mut guard = preview_cache().lock().map_err(|e| e.to_string())?;
+        let cached = guard.take_if(|c| c.path == path);
+        match cached {
+            Some(c) => (c.width, c.height, c.rgba),
+            None => {
+                drop(guard);
+                let img = cap_to_poller_size(decode_image_capped(&path)?);
+                (img.width(), img.height(), img.into_raw())
+            }
+        }
+    };
+    if w == 0 || h == 0 {
+        return Err("Image is empty".to_string());
+    }
+    let expected = (w as usize) * (h as usize) * 4;
+    if bytes.len() != expected {
+        return Err(format!("Invalid image data: {}x{} buffer {} (expected {})", w, h, bytes.len(), expected));
+    }
+
+    let hash = hash_bytes(&bytes);
+    {
+        let mut last = monitor.last_image_hash.lock().map_err(|e| e.to_string())?;
+        *last = Some(hash);
+    }
+    {
+        let mut app = monitor.last_app_copy.lock().map_err(|e| e.to_string())?;
+        *app = Some("__image__".to_string());
+    }
+
+    let mut clip = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clip.set_image(arboard::ImageData {
+        width: w as usize,
+        height: h as usize,
+        bytes: std::borrow::Cow::Borrowed(&bytes),
+    })
+    .map_err(|e| e.to_string())?;
+    let entry = state.add_image_entry_with_app(&bytes, w, h, false, "")?;
+    if let Some(fid) = folder_id {
+        state.move_entry_to_folder(entry.id, Some(fid))?;
+    }
+    Ok(entry)
+}
+
+/// Start an interactive window move from the GTK side. The webview-side
+/// `startDragging()` / `data-tauri-drag-region` path is unreliable here
+/// (transparent, undecorated window + WebKitGTK event timing), so drive
+/// `gtk_window_begin_move_drag` on the main thread with the current pointer
+/// position -- the same call a native GTK titlebar press does.
+#[tauri::command]
+fn begin_window_drag(window: tauri::Window) -> Result<(), String> {
+    let _ = &window;
+    run_on_main_thread_safe(&window, || {
+        #[cfg(target_os = "linux")]
+        unsafe {
+            let ptr = get_widget_ptr();
+            if !ptr.is_null() {
+                let display = gtk::gdk::ffi::gdk_display_get_default();
+                if !display.is_null() {
+                    let seat = gtk::gdk::ffi::gdk_display_get_default_seat(display);
+                    let pointer = if !seat.is_null() {
+                        gtk::gdk::ffi::gdk_seat_get_pointer(seat)
+                    } else {
+                        std::ptr::null_mut()
+                    };
+                    if !pointer.is_null() {
+                        let mut rx: i32 = 0;
+                        let mut ry: i32 = 0;
+                        gtk::gdk::ffi::gdk_device_get_position(pointer, std::ptr::null_mut(), &mut rx, &mut ry);
+                        gtk::ffi::gtk_window_begin_move_drag(ptr as *mut gtk::ffi::GtkWindow, 1, rx, ry, 0);
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn run_on_main_thread_safe<F: FnOnce() + Send + 'static>(window: &tauri::Window, f: F) -> Result<(), String> {
+    window.run_on_main_thread(f).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -954,7 +1253,7 @@ fn set_monitoring(monitor: State<'_, ClipboardMonitor>, active: bool) -> Result<
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn check_clipboard(
     db: State<'_, Arc<Database>>,
     monitor: State<'_, ClipboardMonitor>,
@@ -992,6 +1291,23 @@ fn check_clipboard(
                 Err(e) => return Err(e),
             }
         }
+    }
+
+    // Image reads are far more expensive than text: a clipboard holding a
+    // PNG is re-encoded by the source per request and decoded by arboard.
+    // Decoding ~4K images every 500ms pegged a whole core, so re-read at
+    // most every 1.5s (text detection stays at 500ms).
+    {
+        let mut last_read = monitor.last_image_read.lock().map_err(|e| e.to_string())?;
+        let now = std::time::Instant::now();
+        let due = match *last_read {
+            Some(t) => now.duration_since(t) >= std::time::Duration::from_millis(1500),
+            None => true,
+        };
+        if !due {
+            return Ok(None);
+        }
+        *last_read = Some(now);
     }
 
     // Check for image
@@ -1050,7 +1366,31 @@ fn check_clipboard(
 pub fn run() {
     let db_path = get_db_path();
     let db_path_str = db_path.to_string_lossy().to_string();
-    let db = Arc::new(Database::new(&db_path_str).expect("Failed to initialize database"));
+    let db = Arc::new(match Database::new(&db_path_str) {
+        Ok(db) => db,
+        Err(e) => {
+            // A corrupt/locked DB must never take the whole app down.
+            // Keep running with a non-persistent history and let the user
+            // recover the file.
+            eprintln!(
+                "Ctrl+C: Cannot open history database '{}' ({}).\n\
+                 Starting with a non-persistent history. To recover: \
+                 run `sqlite3 '{}' 'VACUUM'` once no instance is running.",
+                db_path_str, e, db_path_str
+            );
+            let fallback = Database::new_in_memory();
+            let fallback = match fallback {
+                Ok(db) => db,
+                Err(e2) => {
+                    // Nothing sane is possible without a database; fail
+                    // cleanly rather than spinning up a broken instance.
+                    eprintln!("Ctrl+C: in-memory database init also failed: {}", e2);
+                    std::process::exit(1);
+                }
+            };
+            fallback
+        }
+    });
     let loaded_config = config::load_config();
     db.set_max_entries(loaded_config.behavior.max_entries as i64);
     let is_locked = loaded_config.private_mode_locked;
@@ -1269,6 +1609,11 @@ pub fn run() {
             is_autostart_enabled,
             copy_and_paste,
             copy_to_clipboard,
+            add_text_entry,
+            add_image_entry,
+            preview_image_file,
+            add_image_file_entry,
+            begin_window_drag,
             copy_image_and_paste,
             get_entry_image,
             check_clipboard,
@@ -1277,6 +1622,11 @@ pub fn run() {
             register_hotkey,
             get_app_names,
             get_focus_mode,
+            get_folders,
+            create_folder,
+            rename_folder,
+            delete_folder,
+            move_entry_to_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

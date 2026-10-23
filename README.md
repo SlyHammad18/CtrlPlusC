@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.2.0">
+  <a href="https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.3.0">
     <img src="https://img.shields.io/github/v/release/SlyHammad18/CtrlPlusC?style=for-the-badge&logo=github&label=Download" alt="Download" />
   </a>
 </p>
@@ -64,17 +64,17 @@ Built with **Tauri v2** (Rust backend + vanilla JS frontend) for a tiny memory f
 
 ### Windows
 
-Download the [latest MSI installer](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.2.0) and run it.
+Download the [latest MSI installer](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.3.0) and run it.
 
 ```
-Ctrl+C_0.2.0_x64_en-US.msi
+Ctrl+C_0.3.0_x64_en-US.msi
 ```
 
 The app requires **WebView2** (pre-installed on Windows 10+).
 
 ### Linux
 
-Download the `.deb` or `.tar.gz` from the [latest release](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.2.0).
+Download the `.deb` or `.tar.gz` from the [latest release](https://github.com/SlyHammad18/CtrlPlusC/releases/tag/v0.3.0).
 
 Install the required system libraries for your distribution:
 
