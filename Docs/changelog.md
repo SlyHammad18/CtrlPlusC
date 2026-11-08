@@ -4,7 +4,23 @@
 
 ---
 
-## [Fix] — Startup crash-hang + 100% CPU (main-thread sync commands) — 2026-10-24
+## [UI] Sidebar overlays the card list + wider — 2026-11-08
+
+### ✅ What Changed
+- **Sidebar now displays over the app content** instead of pushing the clipboard list aside: `.content-row` got `position: relative` and `.folder-sidebar` is now `position: absolute; top/left/bottom: 0; z-index: 10`, so the list keeps its full width and never reflows when the sidebar toggles (`src/styles/folders.css`).
+- **Width increased 118px → 180px** (duplicate `min-width` removed).
+- **Floating-panel look:** the flat `border-right` was replaced with a soft right-edge shadow (`8px 0 24px rgba(0,0,0,.25)`) so the panel visually sits above the list.
+- No JS changes — the existing `sidebar-hidden` toggle (`#btn-sidebar`, Win/Super+Q) behaves as before.
+
+### ⏭️ What Was Not Changed
+- Sidebar item styling, folder logic, and toggle behavior.
+
+### ❌ Errors Faced
+- `npm run tauri dev` initially failed with "Cannot find native binding" (npm optional-deps bug); fixed by removing `node_modules` + `package-lock.json` and re-running `npm i`.
+- Dev launch then aborted with "Ctrl+C is already running" — the installed release instance (`/usr/bin/ctrl-c`) holds the single-instance lock; not yet resolved this session.
+
+---
+
 
 ### ✅ What Changed
 **Follow-up (same day):** Add Entry now files into the currently selected folder, and sidebar counts are live.
@@ -13,7 +29,7 @@
 - `api.js`: `addTextEntry(content, folderId)`, `addImageToClipboard(rgba, w, h, folderId)`, `addImageFileEntry(path, folderId)`.
 - **Search hint styling fix (header overlap):** with the extra header buttons, the truncated placeholder ("Search his…") ran into the `Ctrl + /` chips and read like typed text. Fixed by (a) moving the chips to `right: 8px` — they and the clear button are mutually exclusive (chips only render while the input is empty; the clear button only while it has text), (b) compacting the caps (`padding: 2px 4px`, font 9.5px, gap 2px), (c) reserving `padding: 0 52px 0 34px` on the input for that zone, and (d) shortening the placeholder to "Search" so it never truncates into the chips.
 - **Win/Super+Q toggles the folder sidebar** (in-app keybinding, same handler as the other Ctrl+ shortcuts; implemented by clicking `#btn-sidebar` so sidebar visibility + active-state styling stay in sync). Folders now sort alphabetically — `get_folders` SQL uses `ORDER BY f.name COLLATE NOCASE` and the frontend keeps a `localeCompare(sensitivity: 'base')` fallback sort; "All History" stays first since the sidebar renders it before folder items.
-- **Search/filters span all folders, with origin labels:** `get_entries` now detects active filtering (search query / date filter / app filter) and drops the folder pane restriction, so results come from every folder plus unfiled history. Entries alias-flagged (`e`/`f` table aliases, date/order clauses updated) and a `LEFT JOIN folders` populates the new `Entry.folder_name` — only populated while filtering, so the All/folder panes keep their clean panes. `get_entry` selects `NULL` for the new column to keep `entry_from_row` shape. `ui.js` createCard renders a `.clip-folder-badge` (folder SVG + name, tooltip "In folder: X") for `folder_name` non-null results; styling appended in `cards.css`.
+- **Search/filters span all folders, with origin labels:** `get_entries` now detects active filtering (search query / date filter / app filter) and drops the folder pane restriction, so results come from every folder plus unfiled history. Entries alias-flagged (`e`/`f` table aliases, date/order clauses updated) and a `LEFT JOIN folders` populates the new `Entry.folder_name` — **populated only while filtering** (follow-up: initially it was always selected, which made the badge show redundantly inside the open folder itself); the All/folder panes select NULL for it. `get_entry` selects `NULL` for the new column to keep `entry_from_row` shape. `ui.js` createCard renders a `.clip-folder-badge` (folder SVG + name, tooltip "In folder: X") for `folder_name` non-null results; styling appended in `cards.css`.
 
 ### Original crash/100%-CPU diagnosis and command-level fixes (immediately below)
 

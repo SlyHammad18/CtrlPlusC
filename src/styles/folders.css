@@ -1,8 +1,9 @@
-/* ---- Layout row: sidebar + card list ---- */
+/* ---- Layout row: card list with sidebar floating over it ---- */
 .content-row {
   flex: 1;
   display: flex;
   min-height: 0;
+  position: relative;
 }
 
 .sidebar-hidden .folder-sidebar {
@@ -11,12 +12,16 @@
 
 /* ---- Sidebar ---- */
 .folder-sidebar {
-  width: 118px;
-  min-width: 118px;
+  width: 180px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 24px rgba(0, 0, 0, 0.25);
   overflow: hidden;
 }
 
