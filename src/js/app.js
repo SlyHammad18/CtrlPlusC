@@ -344,6 +344,11 @@
           e.preventDefault();
           document.getElementById('btn-sidebar')?.click();
           return;
+        case 'h':
+          // Ctrl+H jumps to All History from any folder view
+          e.preventDefault();
+          if (window.folders?.getCurrentId() !== null) window.folders.select(null);
+          return;
       }
     }
 
