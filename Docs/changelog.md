@@ -4,16 +4,20 @@
 
 ---
 
-## [UI] Image icon placeholder while clipboard-image thumbnails load — 2026-11-09
+## [Revert + UI] Image thumbnail loading placeholder, redone — 2026-11-09
 
 ### ✅ What Changed
-- Image cards previously rendered an empty `<img>` until the lazy `IntersectionObserver` fetch (`get_entry_image` → data URI) filled it in — a blank strip. Now a placeholder layer (toolbar-style picture icon, 50% opacity, `var(--text-secondary)`) fills the image wrap and is removed on the thumbnail's `load` event (`src/js/ui.js` `IMAGE_ICON_SVG`, new `.clip-image-placeholder` in `cards.css`; `.clip-image-wrap` became `position: relative`).
-- **Follow-up (same day):** the empty `<img>` still painted its alt text ("Clipboard image") inside a broken-image box over the new placeholder. Fixed with `.clip-image-thumb:not([src]) { display: none; }` — the thumb is hidden until a `src` exists, so only the icon shows. The preview-overlay thumbnail (`add-entry-thumb`) sets its `src` immediately and was unaffected.
-- A failed fetch (catch / null data) keeps the icon visible instead of blank.
-- The thumb renders above the placeholder (later in DOM order), so no flash-over.
+- **Dropped the previous two attempts** from this task: local `main` reset to `85e7281` (PR #20 `[210c1b4]` + PR #21 `[8da2b8b]` gone locally; remote still carries them until a push decision is made) and re-implemented from a clean slate.
+- **Root cause of "images never show":** `img.loading = 'lazy'` combined with `display: none`-at-`src`-assignment never triggers the load in the webview (documented Chromium gotcha), so the `load` hook/visibility flip never fired and only the placeholder icon persisted forever.
+- **Second, deeper root cause found after re-testing (still nothing):** the lazy-fetch `IntersectionObserver` watched the `<img>` itself, but the thumb is `display: none` until loaded — a display-none element has no box so it can **never intersect**, meaning the image bytes were never even requested. The observer now watches the always-rendered `.clip-image-wrap` and looks up the img inside it.
+- **New implementation** (`src/js/ui.js`, `src/styles/cards.css`):
+  - `loading="lazy"` removed (redundant — the observer already fetches only near-viewport images — and harmful for hidden imgs).
+  - Picture-icon placeholder (`IMAGE_ICON_SVG`, `.clip-image-placeholder`) fills the image wrap during fetch; a failed fetch keeps the icon.
+  - On the thumb's `load` event the placeholder is removed and the thumb gets `.loaded` → CSS reveals it (`display: block`); not-yet-loaded thumbs stay hidden (no alt-text box, no flicker). A hidden non-lazy img still decodes and fires `load`, so the reveal works now that the fetch actually starts.
+- **AGENTS.md:** new workflow rule — never commit/merge/push or touch remotes without explicitly asking; keep changes local.
 
-### ⏭️ What Was Not Changed
-- The full-size preview overlay and its thumbnail (line ~804) were untouched.
+### 📝 Notes
+- All changes local (not committed) pending user verification/OK.
 
 ---
 

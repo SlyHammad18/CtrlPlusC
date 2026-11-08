@@ -13,6 +13,7 @@ Pre-initialization — only `Docs/DESIGN.md` and `Docs/changelog.md` exist.
 - Perform tasks **one at a time, in order** (per `Docs/DESIGN.md` §9 task list). Do not skip or combine tasks.
 - After every task, update `Docs/changelog.md` with the format in `Docs/DESIGN.md` §10.
 - Test/verify before moving to the next task. If a task fails, document the error in changelog.md and fix before proceeding.
+- **Never commit, merge, or push without explicitly asking the user first.** Keep changes local — do not create PRs, merge PRs, force-push, or update remotes unless the user asks for it in that specific task.
 
 ## Architecture
 

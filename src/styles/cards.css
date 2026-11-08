@@ -729,17 +729,17 @@
   opacity: 0.5;
 }
 
+/* Thumb stays hidden (only the icon shows) until its data actually paints,
+   avoiding alt-text boxes and unloaded-img flicker. */
 .clip-image-thumb {
+  display: none;
   max-width: 100%;
   max-height: 180px;
   object-fit: contain;
-  display: block;
 }
 
-/* While loading, the thumb has no src and would otherwise render its alt
-   text ("Clipboard image") in a broken-image box over the icon placeholder. */
-.clip-image-thumb:not([src]) {
-  display: none;
+.clip-image-thumb.loaded {
+  display: block;
 }
 
 .clip-image-label {

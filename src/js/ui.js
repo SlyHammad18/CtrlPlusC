@@ -98,18 +98,22 @@ window.ui = (() => {
   const CHEVRON_SVG =
     '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>';
 
-  // Placeholder icon shown inside image cards while the thumbnail is
-  // still being fetched (removed as soon as the <img> loads).
+  // Placeholder icon shown inside image cards while the thumbnail data is
+  // being fetched; removed as soon as the <img> reports a real paint.
   const IMAGE_ICON_SVG =
     '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
 
   const imageObserver = new IntersectionObserver((entries, obs) => {
     entries.forEach((entry) => {
       if (!entry.isIntersecting) return;
-      const img = entry.target;
-      obs.unobserve(img);
-      const id = img.dataset.imageId;
-      if (id) {
+      const wrap = entry.target;
+      obs.unobserve(wrap);
+      // The img is display:none until loaded, and display:none elements
+      // never intersect — so the wrap (always rendered) is observed and
+      // the img found inside it.
+      const img = wrap.querySelector('.clip-image-thumb');
+      const id = img?.dataset.imageId;
+      if (id && img) {
         window.api.getEntryImage(parseInt(id)).then((dataUri) => {
           if (dataUri) img.src = dataUri;
         }).catch(() => {});
@@ -292,20 +296,26 @@ window.ui = (() => {
       const imgWrap = document.createElement('div');
       imgWrap.className = 'clip-image-wrap';
 
+      // NOTE: no `loading="lazy"` here — the IntersectionObserver below IS
+      // the lazy loader (it fetches the data URI only when near the
+      // viewport), and a display-hidden lazy img would never trigger its
+      // load in the first place.
       const img = document.createElement('img');
       img.className = 'clip-image-thumb';
       img.alt = 'Clipboard image';
-      img.loading = 'lazy';
       img.decoding = 'async';
       img.dataset.imageId = entry.id;
 
-      // Icon placeholder behind the (initially empty) thumbnail; removed
-      // once the fetched image actually loads so it never shows over real
-      // pixels. A failed fetch keeps the icon visible.
+      // Icon placeholder behind the (initially hidden) thumb. Once the
+      // fetched data URI paints, mark the thumb `loaded` and drop the
+      // placeholder. A failed fetch keeps the icon.
       const placeholder = document.createElement('div');
       placeholder.className = 'clip-image-placeholder';
       placeholder.innerHTML = IMAGE_ICON_SVG;
-      img.addEventListener('load', () => placeholder.remove(), { once: true });
+      img.addEventListener('load', () => {
+        placeholder.remove();
+        img.classList.add('loaded');
+      }, { once: true });
 
       imgWrap.appendChild(placeholder);
       imgWrap.appendChild(img);
@@ -318,7 +328,7 @@ window.ui = (() => {
       card.appendChild(imgWrap);
       card.appendChild(imgLabel);
 
-      imageObserver.observe(img);
+      imageObserver.observe(imgWrap);
 
       const preview = document.createElement('div');
       preview.className = 'clip-preview';
