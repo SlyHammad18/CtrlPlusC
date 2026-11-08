@@ -1102,35 +1102,138 @@ window.ui = (() => {
         }
       }
 
+      // Keyboard-driven picker actions shared by all create paths (Enter in
+      // search, the create form, the "Create new" option). Failure keeps the
+      // picker open so the user can retry; success closes it.
+      async function createAndAdd(name) {
+        try {
+          const folder = await window.api.createFolder(name);
+          await window.api.moveEntryToFolder(cardId, folder.id);
+          document.removeEventListener('keydown', closeOnKey, true);
+          close(folder.id);
+          loadEntriesRef('');
+          window.folders?.refresh();
+          window.ui.showToast('Added to "' + name + '"');
+        } catch (err) {
+          console.error('Create folder failed:', err);
+          window.ui.showToast(String(err?.message || err).replace(/^Error['"]?\s*:?\s*/i, '').trim() || 'Create folder failed');
+        }
+      }
+
       window.api.getFolders().then((folders) => {
         if (!folders || folders.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'folder-picker-empty';
           empty.textContent = 'No folders yet — type a name below to create one';
           listEl.appendChild(empty);
-        } else {
-          folders.forEach((folder) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'folder-picker-btn';
-            btn.title = 'Add to ' + folder.name;
-            btn.textContent = folder.name;
-            btn.addEventListener('click', async () => {
-              document.removeEventListener('keydown', closeOnKey, true);
-              try {
-                await window.api.moveEntryToFolder(cardId, folder.id);
-                close(folder.id);
-                loadEntriesRef('');
-                window.ui.showToast('Added to "' + folder.name + '"');
-              } catch (err) {
-                console.error('Move to folder failed:', err);
-                close(null);
-                window.ui.showToast('Failed to add to folder');
-              }
-            });
-            listEl.appendChild(btn);
-          });
+          requestAnimationFrame(() => createInput?.focus());
+          return;
         }
+
+        let highlightIndex = 0;
+        let createOption = null;
+        let createName = '';
+
+        // All selectable rows in keyboard order: [createOption?, ...folderBtns]
+        function searchOptions() {
+          const opts = buttons.filter((b) => !b.classList.contains('hidden'));
+          if (createOption && !createOption.classList.contains('hidden')) opts.unshift(createOption);
+          return opts;
+        }
+
+        function applyHighlight() {
+          searchOptions().forEach((b, i) => b.classList.toggle('arrow-selected', i === highlightIndex));
+        }
+
+        function showCreateOption(show, name) {
+          if (show) {
+            if (!createOption) {
+              createOption = document.createElement('button');
+              createOption.type = 'button';
+              createOption.className = 'folder-picker-btn folder-picker-create-option';
+              createOption.addEventListener('click', () => createAndAdd(createName));
+              listEl.appendChild(createOption);
+            }
+            createName = name;
+            createOption.textContent = 'Create new "' + name + '"';
+            createOption.classList.remove('hidden');
+          } else {
+            createOption?.classList.add('hidden');
+          }
+        }
+
+        const buttons = [];
+        folders.forEach((folder) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'folder-picker-btn';
+          btn.title = 'Add to ' + folder.name;
+          btn.textContent = folder.name;
+          btn.addEventListener('click', async () => {
+            document.removeEventListener('keydown', closeOnKey, true);
+            try {
+              await window.api.moveEntryToFolder(cardId, folder.id);
+              close(folder.id);
+              loadEntriesRef('');
+              window.ui.showToast('Added to "' + folder.name + '"');
+            } catch (err) {
+              console.error('Move to folder failed:', err);
+              close(null);
+              window.ui.showToast('Failed to add to folder');
+            }
+          });
+          listEl.appendChild(btn);
+          buttons.push(btn);
+        });
+
+        // Search box above the list; auto-focused on open
+        const searchWrap = document.createElement('div');
+        searchWrap.className = 'folder-picker-search';
+        const search = document.createElement('input');
+        search.type = 'text';
+        search.className = 'folder-picker-search-input';
+        search.placeholder = 'Search folders';
+        search.spellcheck = false;
+        search.maxLength = 64;
+
+        search.addEventListener('input', () => {
+          const raw = search.value.trim();
+          const q = raw.toLowerCase();
+          let visible = 0;
+          buttons.forEach((btn) => {
+            const show = !q || btn.textContent.toLowerCase().includes(q);
+            btn.classList.toggle('hidden', !show);
+            if (show) visible++;
+          });
+          showCreateOption(q !== '' && visible === 0, raw);
+          // Reset to the first row whenever the candidate set changes
+          highlightIndex = 0;
+          applyHighlight();
+        });
+
+        search.addEventListener('keydown', (e) => {
+          const opts = searchOptions();
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (opts.length === 0) return;
+            const dir = e.key === 'ArrowDown' ? 1 : -1;
+            highlightIndex = (highlightIndex + dir + opts.length) % opts.length;
+            applyHighlight();
+            opts[highlightIndex].scrollIntoView({ block: 'nearest' });
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (opts.length === 0) return;
+            const target = opts[Math.min(highlightIndex, opts.length - 1)];
+            target.click();
+          }
+        });
+
+        searchWrap.appendChild(search);
+        panel.insertBefore(searchWrap, listEl);
+        search.focus();
+        applyHighlight();
       }).catch((err) => {
         console.error('Failed to load folders:', err);
         const empty = document.createElement('div');
@@ -1165,24 +1268,12 @@ window.ui = (() => {
       createBtn.setAttribute('aria-label', 'Create folder and add entry');
       createBtn.innerHTML = FOLDER_PLUS_SVG;
 
-      createForm.addEventListener('submit', async (e) => {
+      createForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const name = createInput.value.trim();
         if (!name) return;
         createBtn.disabled = true;
-        try {
-          const folder = await window.api.createFolder(name);
-          await window.api.moveEntryToFolder(cardId, folder.id);
-          document.removeEventListener('keydown', closeOnKey, true);
-          close(folder.id);
-          loadEntriesRef('');
-          window.folders?.refresh();
-          window.ui.showToast('Added to "' + name + '"');
-        } catch (err) {
-          console.error('Create folder failed:', err);
-          window.ui.showToast(String(err?.message || err).replace(/^Error['"]?\s*:?\s*/i, '').trim() || 'Create folder failed');
-          createBtn.disabled = false;
-        }
+        createAndAdd(name);
       });
 
       createForm.appendChild(createInput);
