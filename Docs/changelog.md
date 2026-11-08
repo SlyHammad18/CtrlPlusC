@@ -4,7 +4,60 @@
 
 ---
 
-## [Fix] — Startup crash-hang + 100% CPU (main-thread sync commands) — 2026-10-24
+## [Release] v0.3.1 — Sidebar popover UX + folder picker create — 2026-11-09
+
+Version bump to 0.3.1 (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `Cargo.lock`, README links). Ships since v0.3.0:
+
+- Sidebar overlays the clipboard list as a wider (180px) floating panel; click outside closes it.
+- "Add to folder" picker can create a new folder inline.
+- Toggling the window open (Alt+V / `ctrl-c toggle` / tray) always lands on All History, search cleared.
+- Build/release housekeeping: `release/` gitignored; folder-origin badge only rendered in filtered results.
+
+---
+
+## [UI] Toggling the window open always lands on All History — 2026-11-09
+
+### ✅ What Changed
+- **Alt+V / `ctrl-c toggle` / tray show** resets the main pane to All History (`src/js/app.js` `hotkey-show` handler): after `window.search.clear()`, `window.folders.select(null)` runs whenever a folder view was active, so the window toggles open into the unfiltered list, never the folder view left over from the previous session. `select(null)` fires the normal `onChange` reload with the cleared search state.
+- **Reverted** the interim behavior added a moment earlier (opening the *sidebar* resetting to All History) — the reset was meant for the window toggle; the sidebar may return to the folder view you navigated to via the sidebar.
+
+### ⏭️ What Was Not Changed
+- Closing behavior (outside-click / button), sidebar overlay layout, picker create form.
+
+---
+
+## [UI] Folder picker creates new folders + click-outside closes sidebar + ignore releases — 2026-11-09
+
+### ✅ What Changed
+- **Click outside closes the sidebar** (`src/js/folders.js`): a document-level click listener (when the overlay sidebar is open) closes it unless the click lands inside `.folder-sidebar` or on the `#btn-sidebar` toggle, so the button keeps toggling normally. The wider overlay panel from the previous entry now behaves like a popover: click a card / empty list area and it dismisses.
+- **"Add to folder" picker can now create a folder** (`src/js/ui.js` `showFolderPicker`): a form row (name input + folder-plus button) sits at the bottom of the picker panel, reusing the sidebar's `.folder-create-form`/`.folder-create-input`/`.folder-create-btn` classes so styling stays consistent with zero new CSS. Submit flow: `createFolder` → `moveEntryToFolder(cardId, folder.id)` → close picker → reload entries → `window.folders?.refresh()` (sidebar counts/name list) → toast `Added to "name"`. Errors surface via toast; the button re-enables on failure. Empty-state hint updated from "create one in the sidebar" to "type a name below to create one".
+- **`release/` added to `.gitignore`** (the untracked 0.3.0 `.deb`/`.tar.gz` artifacts disappear from `git status`).
+
+### ⏭️ What Was Not Changed
+- Sidebar create form, folder backend commands, picker Escape/backdrop closing.
+
+### 📝 Notes
+- Applied via `node --check` on `ui.js` (passes); not yet visually verified in a running dev build.
+
+---
+
+## [UI] Sidebar overlays the card list + wider — 2026-11-08
+
+### ✅ What Changed
+- **Sidebar now displays over the app content** instead of pushing the clipboard list aside: `.content-row` got `position: relative` and `.folder-sidebar` is now `position: absolute; top/left/bottom: 0; z-index: 10`, so the list keeps its full width and never reflows when the sidebar toggles (`src/styles/folders.css`).
+- **Width increased 118px → 180px** (duplicate `min-width` removed).
+- **Floating-panel look:** the flat `border-right` was replaced with a soft right-edge shadow (`8px 0 24px rgba(0,0,0,.25)`) so the panel visually sits above the list.
+- No JS changes — the existing `sidebar-hidden` toggle (`#btn-sidebar`, Win/Super+Q) behaves as before.
+
+### ⏭️ What Was Not Changed
+- Sidebar item styling, folder logic, and toggle behavior.
+
+### ❌ Errors Faced
+- `npm run tauri dev` initially failed with "Cannot find native binding" (npm optional-deps bug); fixed by removing `node_modules` + `package-lock.json` and re-running `npm i`.
+- Dev launch then aborted with "Ctrl+C is already running" — the installed release instance (`/usr/bin/ctrl-c`) holds the single-instance lock; not yet resolved this session.
+
+---
+
 
 ### ✅ What Changed
 **Follow-up (same day):** Add Entry now files into the currently selected folder, and sidebar counts are live.
@@ -13,7 +66,7 @@
 - `api.js`: `addTextEntry(content, folderId)`, `addImageToClipboard(rgba, w, h, folderId)`, `addImageFileEntry(path, folderId)`.
 - **Search hint styling fix (header overlap):** with the extra header buttons, the truncated placeholder ("Search his…") ran into the `Ctrl + /` chips and read like typed text. Fixed by (a) moving the chips to `right: 8px` — they and the clear button are mutually exclusive (chips only render while the input is empty; the clear button only while it has text), (b) compacting the caps (`padding: 2px 4px`, font 9.5px, gap 2px), (c) reserving `padding: 0 52px 0 34px` on the input for that zone, and (d) shortening the placeholder to "Search" so it never truncates into the chips.
 - **Win/Super+Q toggles the folder sidebar** (in-app keybinding, same handler as the other Ctrl+ shortcuts; implemented by clicking `#btn-sidebar` so sidebar visibility + active-state styling stay in sync). Folders now sort alphabetically — `get_folders` SQL uses `ORDER BY f.name COLLATE NOCASE` and the frontend keeps a `localeCompare(sensitivity: 'base')` fallback sort; "All History" stays first since the sidebar renders it before folder items.
-- **Search/filters span all folders, with origin labels:** `get_entries` now detects active filtering (search query / date filter / app filter) and drops the folder pane restriction, so results come from every folder plus unfiled history. Entries alias-flagged (`e`/`f` table aliases, date/order clauses updated) and a `LEFT JOIN folders` populates the new `Entry.folder_name` — only populated while filtering, so the All/folder panes keep their clean panes. `get_entry` selects `NULL` for the new column to keep `entry_from_row` shape. `ui.js` createCard renders a `.clip-folder-badge` (folder SVG + name, tooltip "In folder: X") for `folder_name` non-null results; styling appended in `cards.css`.
+- **Search/filters span all folders, with origin labels:** `get_entries` now detects active filtering (search query / date filter / app filter) and drops the folder pane restriction, so results come from every folder plus unfiled history. Entries alias-flagged (`e`/`f` table aliases, date/order clauses updated) and a `LEFT JOIN folders` populates the new `Entry.folder_name` — **populated only while filtering** (follow-up: initially it was always selected, which made the badge show redundantly inside the open folder itself); the All/folder panes select NULL for it. `get_entry` selects `NULL` for the new column to keep `entry_from_row` shape. `ui.js` createCard renders a `.clip-folder-badge` (folder SVG + name, tooltip "In folder: X") for `folder_name` non-null results; styling appended in `cards.css`.
 
 ### Original crash/100%-CPU diagnosis and command-level fixes (immediately below)
 

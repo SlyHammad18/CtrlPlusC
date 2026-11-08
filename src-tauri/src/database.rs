@@ -220,10 +220,17 @@ impl Database {
             || source_app.map(|a| !a.is_empty()).unwrap_or(false);
 
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let mut sql = String::from(
-            "SELECT e.id, e.content, e.content_type, e.preview, e.timestamp, e.is_pinned, e.is_private, e.source_app, e.name, e.folder_id, f.name FROM entries e
+        // folder_name (f.name) only in filtered mode: search/filter results
+        // span all folders and cards show their origin. In plain panes it
+        // would be redundant (the open folder header already says where you
+        // are), so those rows select NULL.
+        let folder_name_expr = if filtering { "f.name" } else { "NULL" };
+        let mut sql = format!(
+            "SELECT e.id, e.content, e.content_type, e.preview, e.timestamp, e.is_pinned, e.is_private, e.source_app, e.name, e.folder_id, {}
+             FROM entries e
              LEFT JOIN folders f ON e.folder_id = f.id
              WHERE 1=1",
+            folder_name_expr
         );
         let mut param_values: Vec<String> = Vec::new();
 
