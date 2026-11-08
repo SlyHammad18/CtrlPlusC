@@ -4,6 +4,20 @@
 
 ---
 
+## [Release] v0.3.2 — Folder search, keyboard picker, Ctrl+H — 2026-11-09
+
+Version bump to 0.3.2 (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `Cargo.lock`, README links, Settings About). Ships since v0.3.1:
+
+- **Image thumbnails:** picture-icon placeholder while loading, reveal on paint (fixed two display bugs: a display:none img never intersects the lazy observer, and `loading=lazy` never loads hidden imgs); no alt-text box.
+- **Folder sidebar:** rows fully clickable; search bar (case-insensitive; hides All History; no-match row; clears on select/Escape).
+- **Add-to-folder picker:** search bar; auto-focused; ↑/↓ navigation with persistent highlight; Enter files into the selected folder; no-match path shows a pre-selected *"Create new "x""* row that creates + files via the shared `createAndAdd` helper.
+- **Ctrl+H** jumps to All History from any folder view (search preserved).
+- Settings About version label fixed (v0.3.0 → current).
+
+---
+
+
+
 ## [UI] Ctrl+H jumps to All History — 2026-11-09
 
 ### ✅ What Changed
