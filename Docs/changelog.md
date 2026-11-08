@@ -4,6 +4,17 @@
 
 ---
 
+## [Fix] Folder sidebar rows fully clickable — 2026-11-09
+
+### ✅ What Changed
+- `buildFolderItem` (`src/js/folders.js`) attached `click → select(folder.id)` only to the label and icon spans, so clicks on the row's padding or the entry-count badge did nothing. The listener now lives on the `.folder-item` element itself, making the entire row switch folders (All History row already had this behavior).
+- No CSS change needed — `.folder-item` already has full-row `cursor: pointer` + hover styling.
+
+### 📝 Notes
+- Applied via `node --check` (passes); visually verifiable in the running dev build.
+
+---
+
 ## [Release] v0.3.1 — Sidebar popover UX + folder picker create — 2026-11-09
 
 Version bump to 0.3.1 (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `Cargo.lock`, README links). Ships since v0.3.0:
