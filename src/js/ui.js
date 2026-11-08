@@ -1081,7 +1081,7 @@ window.ui = (() => {
         if (!folders || folders.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'folder-picker-empty';
-          empty.textContent = 'No folders yet — create one in the sidebar';
+          empty.textContent = 'No folders yet — type a name below to create one';
           listEl.appendChild(empty);
         } else {
           folders.forEach((folder) => {
@@ -1121,8 +1121,51 @@ window.ui = (() => {
         }
       });
 
+      // --- Create a new folder directly from the picker ---
+      const createForm = document.createElement('form');
+      createForm.className = 'folder-create-form';
+      createForm.autocomplete = 'off';
+
+      const createInput = document.createElement('input');
+      createInput.type = 'text';
+      createInput.className = 'folder-create-input';
+      createInput.placeholder = 'New folder';
+      createInput.maxLength = 64;
+      createInput.spellcheck = false;
+
+      const createBtn = document.createElement('button');
+      createBtn.type = 'submit';
+      createBtn.className = 'folder-create-btn';
+      createBtn.title = 'Create folder and add entry';
+      createBtn.setAttribute('aria-label', 'Create folder and add entry');
+      createBtn.innerHTML = FOLDER_PLUS_SVG;
+
+      createForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = createInput.value.trim();
+        if (!name) return;
+        createBtn.disabled = true;
+        try {
+          const folder = await window.api.createFolder(name);
+          await window.api.moveEntryToFolder(cardId, folder.id);
+          document.removeEventListener('keydown', closeOnKey, true);
+          close(folder.id);
+          loadEntriesRef('');
+          window.folders?.refresh();
+          window.ui.showToast('Added to "' + name + '"');
+        } catch (err) {
+          console.error('Create folder failed:', err);
+          window.ui.showToast(String(err?.message || err).replace(/^Error['"]?\s*:?\s*/i, '').trim() || 'Create folder failed');
+          createBtn.disabled = false;
+        }
+      });
+
+      createForm.appendChild(createInput);
+      createForm.appendChild(createBtn);
+
       panel.appendChild(header);
       panel.appendChild(listEl);
+      panel.appendChild(createForm);
       overlay.appendChild(panel);
       document.body.appendChild(overlay);
       document.addEventListener('keydown', closeOnKey, true);

@@ -21,3 +21,6 @@ Thumbs.db
 
 # Tauri build artifacts
 src-tauri/target/
+
+# Release/prebuilt artifacts
+release/
