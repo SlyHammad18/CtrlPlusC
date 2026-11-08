@@ -4,6 +4,23 @@
 
 ---
 
+## [Revert + UI] Image thumbnail loading placeholder, redone — 2026-11-09
+
+### ✅ What Changed
+- **Dropped the previous two attempts** from this task: local `main` reset to `85e7281` (PR #20 `[210c1b4]` + PR #21 `[8da2b8b]` gone locally; remote still carries them until a push decision is made) and re-implemented from a clean slate.
+- **Root cause of "images never show":** `img.loading = 'lazy'` combined with `display: none`-at-`src`-assignment never triggers the load in the webview (documented Chromium gotcha), so the `load` hook/visibility flip never fired and only the placeholder icon persisted forever.
+- **Second, deeper root cause found after re-testing (still nothing):** the lazy-fetch `IntersectionObserver` watched the `<img>` itself, but the thumb is `display: none` until loaded — a display-none element has no box so it can **never intersect**, meaning the image bytes were never even requested. The observer now watches the always-rendered `.clip-image-wrap` and looks up the img inside it.
+- **New implementation** (`src/js/ui.js`, `src/styles/cards.css`):
+  - `loading="lazy"` removed (redundant — the observer already fetches only near-viewport images — and harmful for hidden imgs).
+  - Picture-icon placeholder (`IMAGE_ICON_SVG`, `.clip-image-placeholder`) fills the image wrap during fetch; a failed fetch keeps the icon.
+  - On the thumb's `load` event the placeholder is removed and the thumb gets `.loaded` → CSS reveals it (`display: block`); not-yet-loaded thumbs stay hidden (no alt-text box, no flicker). A hidden non-lazy img still decodes and fires `load`, so the reveal works now that the fetch actually starts.
+- **AGENTS.md:** new workflow rule — never commit/merge/push or touch remotes without explicitly asking; keep changes local.
+
+### 📝 Notes
+- All changes local (not committed) pending user verification/OK.
+
+---
+
 ## [Fix] Folder sidebar rows fully clickable — 2026-11-09
 
 ### ✅ What Changed
