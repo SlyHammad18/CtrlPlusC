@@ -98,6 +98,11 @@ window.ui = (() => {
   const CHEVRON_SVG =
     '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>';
 
+  // Placeholder icon shown inside image cards while the thumbnail is
+  // still being fetched (removed as soon as the <img> loads).
+  const IMAGE_ICON_SVG =
+    '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+
   const imageObserver = new IntersectionObserver((entries, obs) => {
     entries.forEach((entry) => {
       if (!entry.isIntersecting) return;
@@ -293,6 +298,16 @@ window.ui = (() => {
       img.loading = 'lazy';
       img.decoding = 'async';
       img.dataset.imageId = entry.id;
+
+      // Icon placeholder behind the (initially empty) thumbnail; removed
+      // once the fetched image actually loads so it never shows over real
+      // pixels. A failed fetch keeps the icon visible.
+      const placeholder = document.createElement('div');
+      placeholder.className = 'clip-image-placeholder';
+      placeholder.innerHTML = IMAGE_ICON_SVG;
+      img.addEventListener('load', () => placeholder.remove(), { once: true });
+
+      imgWrap.appendChild(placeholder);
       imgWrap.appendChild(img);
 
       const imgLabel = document.createElement('div');
