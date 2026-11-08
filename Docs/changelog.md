@@ -4,6 +4,17 @@
 
 ---
 
+## [UI] Toggling the window open always lands on All History — 2026-11-09
+
+### ✅ What Changed
+- **Alt+V / `ctrl-c toggle` / tray show** resets the main pane to All History (`src/js/app.js` `hotkey-show` handler): after `window.search.clear()`, `window.folders.select(null)` runs whenever a folder view was active, so the window toggles open into the unfiltered list, never the folder view left over from the previous session. `select(null)` fires the normal `onChange` reload with the cleared search state.
+- **Reverted** the interim behavior added a moment earlier (opening the *sidebar* resetting to All History) — the reset was meant for the window toggle; the sidebar may return to the folder view you navigated to via the sidebar.
+
+### ⏭️ What Was Not Changed
+- Closing behavior (outside-click / button), sidebar overlay layout, picker create form.
+
+---
+
 ## [UI] Folder picker creates new folders + click-outside closes sidebar + ignore releases — 2026-11-09
 
 ### ✅ What Changed

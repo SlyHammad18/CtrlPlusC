@@ -1042,6 +1042,9 @@
       document.getElementById('theme-overlay')?.classList.remove('visible');
       window.ui.hideFilterPanel();
       window.search.clear();
+      // Toggling the window open always lands on All History, not the folder
+      // view that was active when it was last shown/hidden.
+      if (window.folders?.isFolderView()) window.folders.select(null);
 
       const cards = Array.from(cardList.querySelectorAll('.clip-card')).filter(
         (c) => !c.closest('.group.collapsed')
