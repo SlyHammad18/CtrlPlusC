@@ -8,6 +8,7 @@
 
 ### ✅ What Changed
 - Image cards previously rendered an empty `<img>` until the lazy `IntersectionObserver` fetch (`get_entry_image` → data URI) filled it in — a blank strip. Now a placeholder layer (toolbar-style picture icon, 50% opacity, `var(--text-secondary)`) fills the image wrap and is removed on the thumbnail's `load` event (`src/js/ui.js` `IMAGE_ICON_SVG`, new `.clip-image-placeholder` in `cards.css`; `.clip-image-wrap` became `position: relative`).
+- **Follow-up (same day):** the empty `<img>` still painted its alt text ("Clipboard image") inside a broken-image box over the new placeholder. Fixed with `.clip-image-thumb:not([src]) { display: none; }` — the thumb is hidden until a `src` exists, so only the icon shows. The preview-overlay thumbnail (`add-entry-thumb`) sets its `src` immediately and was unaffected.
 - A failed fetch (catch / null data) keeps the icon visible instead of blank.
 - The thumb renders above the placeholder (later in DOM order), so no flash-over.
 

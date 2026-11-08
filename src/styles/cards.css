@@ -736,6 +736,12 @@
   display: block;
 }
 
+/* While loading, the thumb has no src and would otherwise render its alt
+   text ("Clipboard image") in a broken-image box over the icon placeholder. */
+.clip-image-thumb:not([src]) {
+  display: none;
+}
+
 .clip-image-label {
   font-family: var(--font-mono);
   font-size: 9px;
