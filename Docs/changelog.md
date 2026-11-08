@@ -4,6 +4,17 @@
 
 ---
 
+## [Release] v0.3.1 — Sidebar popover UX + folder picker create — 2026-11-09
+
+Version bump to 0.3.1 (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `Cargo.lock`, README links). Ships since v0.3.0:
+
+- Sidebar overlays the clipboard list as a wider (180px) floating panel; click outside closes it.
+- "Add to folder" picker can create a new folder inline.
+- Toggling the window open (Alt+V / `ctrl-c toggle` / tray) always lands on All History, search cleared.
+- Build/release housekeeping: `release/` gitignored; folder-origin badge only rendered in filtered results.
+
+---
+
 ## [UI] Toggling the window open always lands on All History — 2026-11-09
 
 ### ✅ What Changed
