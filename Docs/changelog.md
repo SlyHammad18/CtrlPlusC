@@ -4,6 +4,22 @@
 
 ---
 
+## [UI] Ctrl+H jumps to All History — 2026-11-09
+
+### ✅ What Changed
+- New in-app shortcut **Ctrl+H** (⌘H on macOS) in the shared `Ctrl+` handler (`src/js/app.js`): when a folder view is open, `window.folders.select(null)` fires the normal reload into All History (current search text is preserved); pressing it on All History is a no-op (no redundant reload).
+- Fixed a spot missed in the 0.3.1 version sweep: the Settings → About label still read "Ctrl+C v0.3.0" (`src/index.html` → v0.3.1).
+
+### ⏭️ What Was Not Changed
+- Other shortcuts (Ctrl+L/R/I/D/N/F/Q, Ctrl+/), the folder sidebar, hotkey config.
+
+### 📝 Notes
+- `node --check` passes; changes local (not committed) per AGENTS.md rule.
+
+---
+
+
+
 ## [UI] Keyboard-driven Add-to-folder picker — 2026-11-09
 
 ### ✅ What Changed
