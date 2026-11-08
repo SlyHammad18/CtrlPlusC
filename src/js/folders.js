@@ -6,8 +6,11 @@ window.folders = (() => {
   const list = document.getElementById('folder-list');
   const createForm = document.getElementById('folder-create-form');
   const createInput = document.getElementById('folder-create-input');
+  const searchInput = document.getElementById('folder-search-input');
   const btnSidebar = document.getElementById('btn-sidebar');
   const contentRow = document.getElementById('content-row');
+
+  let folderFilter = '';
 
   const viewHeader = document.getElementById('folder-view-header');
   const viewName = document.getElementById('folder-view-name');
@@ -26,8 +29,30 @@ window.folders = (() => {
 
   function select(id) {
     currentFolderId = id;
+    clearFolderFilter();
     render();
     notify();
+  }
+
+  // --- Sidebar folder search ---
+  function clearFolderFilter() {
+    folderFilter = '';
+    if (searchInput) searchInput.value = '';
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      folderFilter = searchInput.value.trim().toLowerCase();
+      render();
+    });
+    // Escape clears the box entirely
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        clearFolderFilter();
+        render();
+      }
+    });
   }
 
   // --- Folder view header (main window) ---
@@ -176,8 +201,19 @@ window.folders = (() => {
   function render() {
     if (list) {
       list.innerHTML = '';
-      list.appendChild(buildAllItem());
-      folders.forEach((folder) => list.appendChild(buildFolderItem(folder)));
+      // While searching, "All History" is not a folder match — hide it and
+      // show only folders whose name matches the query.
+      if (!folderFilter) list.appendChild(buildAllItem());
+      const matches = folderFilter
+        ? folders.filter((f) => f.name.toLowerCase().includes(folderFilter))
+        : folders;
+      matches.forEach((folder) => list.appendChild(buildFolderItem(folder)));
+      if (folderFilter && matches.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'folder-search-empty';
+        empty.textContent = 'No matching folders';
+        list.appendChild(empty);
+      }
     }
     updateViewHeader();
   }

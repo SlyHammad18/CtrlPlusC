@@ -30,6 +30,41 @@
   flex-shrink: 0;
 }
 
+/* ---- Sidebar folder search ---- */
+.folder-sidebar-search {
+  padding: 0 6px 6px;
+  flex-shrink: 0;
+}
+
+.folder-search-input {
+  width: 100%;
+  padding: 5px 6px;
+  font-family: var(--font-family);
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.folder-search-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.folder-search-input:focus {
+  border-color: var(--accent);
+}
+
+.folder-search-empty {
+  padding: 8px 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
 .folder-sidebar-title {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -281,6 +316,37 @@
   color: var(--text-primary);
 }
 
+/* Search box for the picker list */
+.folder-picker-search {
+  padding: 0 12px 6px;
+}
+
+.folder-picker-search-input {
+  width: 100%;
+  padding: 5px 8px;
+  font-family: var(--font-family);
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.folder-picker-search-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.folder-picker-search-input:focus {
+  border-color: var(--accent);
+}
+
+.folder-picker-btn.hidden {
+  display: none;
+}
+
 .folder-picker-list {
   flex: 1;
   overflow-y: auto;
@@ -313,6 +379,30 @@
 
 .folder-picker-btn:hover {
   background: var(--accent-subtle);
+}
+
+/* Keyboard-selected row (arrow keys / Enter) */
+.folder-picker-btn.arrow-selected {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+/* "Create new 'x'" option shown when a search has no matches */
+.folder-picker-create-option {
+  color: var(--accent);
+  font-size: 11px;
+  border-top: 1px dashed var(--border);
+  border-radius: 0;
+  margin-top: 4px;
+  padding: 8px;
+}
+
+.folder-picker-create-option.arrow-selected {
+  color: var(--accent);
+}
+
+.folder-picker-btn.hidden {
+  display: none;
 }
 
 /* ---- Add entry modal ---- */

@@ -4,6 +4,38 @@
 
 ---
 
+## [UI] Keyboard-driven Add-to-folder picker — 2026-11-09
+
+### ✅ What Changed
+- `showFolderPicker` (`src/js/ui.js`): the search box is **auto-focused on open** (the create input is focused instead when no folders exist).
+- **Arrow Up/Down** moves a persistent highlight (`.arrow-selected`, accent-tinted like hover) across the visible rows — [Create-new option first, then matching folders], wrapping at the ends, `scrollIntoView` for long lists. The first row is selected by default.
+- **Enter** triggers the highlighted row: adds the entry to that folder (existing button path) — no mouse needed.
+- **No match + typed query** shows a *"Create new "x""* action row (replaces the old "No matching folders" plain message) as the first, **pre-selected** row; Enter/thereafter creates the folder with the typed name, files the entry into it, refreshes the sidebar and reloads the pane.
+- All creation paths (form submit, create-option, keyboard Enter) now share one `createAndAdd(name)` helper — failures toast and keep the picker open for retry; success closes and refreshes.
+
+### ⏭️ What Was Not Changed
+- Sidebar search behavior, folder CRUD commands, Escape/backdrop close semantics.
+
+### 📝 Notes
+- `node --check` passes; changes local (not committed) per AGENTS.md rule.
+
+---
+
+## [UI] Search bar in folder sidebar + Add-to-folder picker — 2026-11-09
+
+### ✅ What Changed
+- **Sidebar** (`src/index.html`, `src/js/folders.js`, `src/styles/folders.css`): a "Search folders" input between the header and the list. Live client-side filter (case-insensitive substring) — while active, "All History" is hidden and only matching folders render, with a "No matching folders" empty row. Selecting any folder (or pressing Escape) clears the search.
+- **Picker** (`src/js/ui.js` `showFolderPicker`, CSS): same search input above the folder buttons, shown only when folders exist. Filtering toggles `.hidden` on buttons; zero matches shows "No matching folders". Escape still closes the picker (document-level capture handler); the create form is unchanged.
+- Both inputs reuse the app's small-input styling (11px, `--bg-card`, `--border`/`--accent` focus), no new design language.
+
+### ⏭️ What Was Not Changed
+- Sidebar/pane reload logic, counts, folder CRUD, outside-click closing.
+
+### 📝 Notes
+- `node --check` passes on both JS files; changes local (not committed) per AGENTS.md rule.
+
+---
+
 ## [Revert + UI] Image thumbnail loading placeholder, redone — 2026-11-09
 
 ### ✅ What Changed
