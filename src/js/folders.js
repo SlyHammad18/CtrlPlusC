@@ -146,8 +146,9 @@ window.folders = (() => {
     count.textContent = folder.entry_count;
     if (folder.entry_count > 0) item.appendChild(count);
 
-    label.addEventListener('click', () => select(folder.id));
-    icon.addEventListener('click', () => select(folder.id));
+    // Whole row is clickable (text, icon, count badge and padding), not
+    // just the label.
+    item.addEventListener('click', () => select(folder.id));
 
     return item;
   }
