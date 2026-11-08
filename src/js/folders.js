@@ -191,6 +191,15 @@ window.folders = (() => {
     setSidebarVisible(contentRow.classList.contains('sidebar-hidden'));
   });
 
+  // --- Click outside the sidebar closes it ---
+  // The overlay sidebar floats above the list now, so any click on the list
+  // or elsewhere should dismiss it (button/form clicks inside stay open).
+  document.addEventListener('click', (e) => {
+    if (!contentRow || contentRow.classList.contains('sidebar-hidden')) return;
+    if (e.target.closest('.folder-sidebar') || e.target.closest('#btn-sidebar')) return;
+    setSidebarVisible(false);
+  });
+
   // --- Create folder ---
   createForm?.addEventListener('submit', async (e) => {
     e.preventDefault();

@@ -4,6 +4,21 @@
 
 ---
 
+## [UI] Folder picker creates new folders + click-outside closes sidebar + ignore releases — 2026-11-09
+
+### ✅ What Changed
+- **Click outside closes the sidebar** (`src/js/folders.js`): a document-level click listener (when the overlay sidebar is open) closes it unless the click lands inside `.folder-sidebar` or on the `#btn-sidebar` toggle, so the button keeps toggling normally. The wider overlay panel from the previous entry now behaves like a popover: click a card / empty list area and it dismisses.
+- **"Add to folder" picker can now create a folder** (`src/js/ui.js` `showFolderPicker`): a form row (name input + folder-plus button) sits at the bottom of the picker panel, reusing the sidebar's `.folder-create-form`/`.folder-create-input`/`.folder-create-btn` classes so styling stays consistent with zero new CSS. Submit flow: `createFolder` → `moveEntryToFolder(cardId, folder.id)` → close picker → reload entries → `window.folders?.refresh()` (sidebar counts/name list) → toast `Added to "name"`. Errors surface via toast; the button re-enables on failure. Empty-state hint updated from "create one in the sidebar" to "type a name below to create one".
+- **`release/` added to `.gitignore`** (the untracked 0.3.0 `.deb`/`.tar.gz` artifacts disappear from `git status`).
+
+### ⏭️ What Was Not Changed
+- Sidebar create form, folder backend commands, picker Escape/backdrop closing.
+
+### 📝 Notes
+- Applied via `node --check` on `ui.js` (passes); not yet visually verified in a running dev build.
+
+---
+
 ## [UI] Sidebar overlays the card list + wider — 2026-11-08
 
 ### ✅ What Changed
